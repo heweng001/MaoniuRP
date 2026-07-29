@@ -1195,6 +1195,13 @@ document.querySelectorAll('[data-close-modal="true"]').forEach((node) => {
   node.addEventListener('click', () => pluginGuideModal.classList.add('hidden'));
 });
 
+function syncReportOriginToExtension() {
+  window.postMessage(
+    { source: 'peer-top20-report', type: 'setReportOrigin', value: window.location.origin },
+    window.location.origin,
+  );
+}
+
 function listenForExtensionIdMessage() {
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== window.location.origin) return;
@@ -1203,6 +1210,7 @@ function listenForExtensionIdMessage() {
     saveExtensionId(data.value);
     probeExtension();
   });
+  syncReportOriginToExtension();
   window.postMessage({ source: 'peer-top20-report', type: 'requestExtensionId' }, window.location.origin);
 }
 

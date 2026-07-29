@@ -1,0 +1,17 @@
+services:
+  maoniurp:
+    build:
+      context: .
+      dockerfile: peer-top20-report/Dockerfile
+    container_name: maoniurp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3456:3456"
+    environment:
+      NODE_ENV: production
+      PORT: 3456
+    volumes:
+      - maoniurp-data:/app/peer-top20-report/data
+
+volumes:
+  maoniurp-data:

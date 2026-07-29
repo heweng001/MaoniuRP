@@ -1,0 +1,23 @@
+# 不用 Docker 时，复制到 /etc/systemd/system/peer-top20.service
+# 把 /opt/MaoniuRP 换成你服务器上的实际路径
+#
+# sudo systemctl daemon-reload
+# sudo systemctl enable peer-top20
+# sudo systemctl start peer-top20
+
+[Unit]
+Description=MaoniuRP Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/MaoniuRP/peer-top20-report
+Environment=NODE_ENV=production
+Environment=PORT=3456
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

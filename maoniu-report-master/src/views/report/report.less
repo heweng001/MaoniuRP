@@ -1,0 +1,174 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  .header {
+    width: 40rem;
+    border: 1px solid #aaa;
+    padding: 1rem;
+
+    .btn_group {
+      display: flex;
+      justify-content: right;
+      align-items: center;
+      margin-top: 1rem;
+
+      .cache_btn {
+        margin: 0 2rem;
+      }
+    }
+
+    .module_scroll {
+      position: fixed;
+      left: 5%;
+      top: 2%;
+
+      dd {
+        margin: 10px;
+
+        &:hover {
+          cursor: pointer;
+        }
+      }
+
+      .dd_color {
+        color: #409eff;
+      }
+    }
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: start;
+    width: 75rem;
+
+    .report_header {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+
+      .logo {
+        width: 100%;
+      }
+
+      .upload_button {
+        margin-top: 5px;
+        width: 200px;
+        height: 30px;
+        white-space:nowrap
+
+      }
+
+      .upload_button>button {
+        margin: 0 5px;
+        display: none;
+      }
+
+      p {
+        margin: .5rem 0;
+      }
+
+      /* 当鼠标悬停在 .report_header 上时显示 .upload_button */
+      &:hover .upload_button>button {
+        display: block;
+        display: inline-block;
+      }
+    }
+
+    &>* {
+      width: 100%;
+    }
+  }
+}
+
+// PDF style
+@media all {
+  .page-break {
+    display: none;
+  }
+}
+
+@media print {
+
+  html,
+  body {
+    height: initial !important;
+    overflow: initial !important; // 如果出现无法分页加入此属性
+    -webkit-print-color-adjust: exact;
+  }
+
+  thead {
+    break-inside: auto;
+  }
+
+  table {
+    page-break-inside: auto !important
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important
+  }
+
+  thead {
+    display: table-header-group !important
+  }
+
+  tfoot {
+    display: table-footer-group !important
+  }
+}
+
+@media print {
+  .page-break {
+    margin-top: 1rem;
+    display: block;
+    page-break-before: auto;
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: start;
+
+    .report_header {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+
+      .logo {
+        width: 100%;
+      }
+
+      .upload_button {
+        display: none;
+      }
+
+      p {
+        margin: .5rem 0;
+      }
+    }
+
+    &>* {
+      width: 100%;
+    }
+  }
+}
+
+@page {
+  size: auto;
+  margin: 1rem; // 打印页样式
+}
+
+@media screen and (max-width: 1440px) {
+  .module_scroll {
+    display: none;
+  }
+}

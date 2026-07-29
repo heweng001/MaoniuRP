@@ -1,0 +1,23 @@
+# 依赖包（体积大，每台设备 npm install 即可）
+node_modules/
+
+# 本地数据：用户账号、报告缓存（不要上传）
+peer-top20-report/data/
+
+# 环境变量 / 密钥
+.env
+.env.*
+
+# 日志
+*.log
+
+# 系统临时文件
+.DS_Store
+Thumbs.db
+
+# IDE 配置
+.idea/
+.vscode/
+
+# 临时调试 HTML
+tmp_*.html

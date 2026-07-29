@@ -1,0 +1,8 @@
+.company-cell .company-cell-search {
+    display: none;
+    
+}
+.company-cell:hover .company-cell-search {
+    display: inline;
+    
+}

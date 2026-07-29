@@ -1,0 +1,84 @@
+.container .content {
+  color: #606266;
+  vertical-align: auto;
+}
+.container .one-cell-height {
+  height: 30px;
+}
+.container .one-cell-line-height {
+  line-height: 30px;
+}
+.container .two-cellHeight {
+  display: block;
+  height: 60px;
+}
+.container .two-cell-line-height {
+  line-height: 60px;
+}
+.container .four-cellHeight {
+  height: 120px;
+}
+.container .four-cell-line-height {
+  line-height: 120px;
+}
+.container .five-cellHeight {
+  height: 150px;
+}
+.container .five-cell-line-height {
+  line-height: 150px;
+}
+.container a {
+  color: #444;
+  text-decoration: none;
+}
+.container a:hover {
+  color: #20a0ff;
+}
+.container .mb10 {
+  margin-bottom: 10px;
+}
+.container .mgr-10 {
+  margin-right: 10px;
+}
+.container .mgr-5 {
+  margin-right: 5px;
+}
+.container .red {
+  color: red;
+}
+.container .clickToSeeDetail {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  color: #b3b3b3;
+}
+.container .clickToSeeDetail a {
+  color: #b3b3b3;
+}
+.container .clickToSeeDetail a:hover {
+  color: #20a0ff;
+}
+.container .border-style {
+  border-right: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
+  border-collapse: collapse;
+}
+.container .border-top {
+  border-top: 1px solid #ebeef5;
+}
+.container .border-left {
+  border-left: 1px solid #ebeef5;
+}
+.container h3 {
+  margin: 0;
+}
+.container p {
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-left: 10px;
+  font-family: OpenSans;
+}
+.container .product-data p span {
+  margin: 0 10px;
+}
+/*# sourceMappingURL=productCoversionDataTable.css.map */

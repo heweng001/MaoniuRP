@@ -1,0 +1,28 @@
+{
+    "env": {
+        "browser": true,
+        "es2021": true,
+        "webextensions": true
+    },
+    "extends": [
+        "eslint:recommended",
+        "plugin:vue/vue3-essential",
+        "plugin:prettier/recommended"
+    ],
+    "overrides": [],
+    "parserOptions": {
+        "parser": "@babel/eslint-parser",
+
+        "ecmaVersion": 2020,
+        "sourceType": "module"
+    },
+    "plugins": [
+        "vue",
+        "prettier"
+    ],
+    "rules": {
+        // "max-len": [1, { "code": 120 }]
+        "prettier/prettier": [ 0, { "endOfLine": "auto" }
+        ]
+    }
+}

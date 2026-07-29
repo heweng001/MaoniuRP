@@ -1,0 +1,8 @@
+node_modules
+build
+secrets.*.js
+*.xml
+*.iml
+.DS_Store
+bun.lockb
+.yarn

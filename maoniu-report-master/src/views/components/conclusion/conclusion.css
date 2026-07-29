@@ -1,0 +1,81 @@
+.wrapper {
+  height: 100%;
+}
+.container {
+  margin: 0;
+  padding: 0 10px;
+}
+#pdfDom {
+  margin: 10px;
+}
+.item {
+  margin-bottom: 2px;
+}
+.btn {
+  float: right;
+}
+.btn .el-button {
+  padding: 3px 0;
+}
+.content {
+  line-height: 180%;
+}
+.empty-tip {
+  margin: 0 auto;
+  text-align: center;
+}
+.inline {
+  display: inline;
+}
+.warn {
+  color: #e6a23c !important;
+}
+.succ {
+  color: #67c23a !important;
+}
+.primary {
+  color: #409eff !important;
+}
+p {
+  margin-block-start: 1em;
+  margin-block-end: 1em;
+  margin-inline-start: 0;
+  margin-inline-end: 0;
+}
+span + span {
+  margin-left: 5px;
+}
+.btn_item {
+  visibility: hidden;
+}
+.btn_group {
+  position: absolute;
+}
+.btn_group:hover .btn_item {
+  visibility: visible;
+}
+.text:hover .edit-icon {
+  visibility: hidden;
+}
+.dpn {
+  margin-left: 10px;
+  visibility: hidden;
+}
+h1:hover .dpn,
+h2:hover .dpn,
+h3:hover .dpn,
+h4:hover .dpn,
+h5:hover .dpn,
+h6:hover .dpn {
+  visibility: visible;
+}
+h1 {
+  display: flex;
+  justify-content: start;
+  align-items: center;
+}
+h3 {
+  margin-bottom: 0.5rem !important;
+}
+/*# sourceMappingURL=conclusion.css.map */
+/*# sourceMappingURL=conclusion.css.map */

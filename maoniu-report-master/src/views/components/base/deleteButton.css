@@ -1,0 +1,17 @@
+.dpn {
+  margin-top: -30px;
+  margin-left: 10px;
+  visibility: hidden;
+  vertical-align: center;
+}
+h1:hover .dpn,
+h2:hover .dpn,
+h3:hover .dpn,
+h4:hover .dpn,
+h6:hover .dpn {
+  visibility: visible;
+}
+.btn_group:hover .dpn {
+  visibility: visible;
+}
+/*# sourceMappingURL=deleteButton.css.map */

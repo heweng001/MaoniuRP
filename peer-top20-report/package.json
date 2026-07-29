@@ -1,0 +1,18 @@
+{
+  "name": "ai-copilot-remaster",
+  "version": "2.0.0",
+  "description": "AI操盘手-重制版 · 阿里巴巴同行数据分析 SaaS",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "web": "node server.js",
+    "demo": "node index.js --demo",
+    "cli": "node index.js"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2"
+  }
+}

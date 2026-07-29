@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI操盘手-重制版</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <h1>AI操盘手-重制版</h1>
+      <p class="desc">配合 SaaS 网页采集阿里巴巴同行数据 · 福建贸牛科技股份有限公司</p>
+
+      <section class="card">
+        <label>插件 ID</label>
+        <div class="id-row">
+          <input id="extensionId" readonly />
+          <button id="copyIdBtn" type="button">复制</button>
+        </div>
+        <p class="hint">在 SaaS 右上角插件状态旁填入此 ID。</p>
+      </section>
+
+      <section class="card">
+        <label>登录状态</label>
+        <p id="loginStatus">检测中...</p>
+      </section>
+
+      <section class="card">
+        <label>使用步骤</label>
+        <ol>
+          <li>登录 <a href="https://i.alibaba.com" target="_blank">阿里巴巴国际站</a></li>
+          <li>打开 AI操盘手-重制版 SaaS 并登录</li>
+          <li>粘贴插件 ID 到右上角</li>
+          <li>在报告页生成 Top20 或指定同行报告</li>
+        </ol>
+      </section>
+
+      <button id="openReportBtn" type="button" class="primary">打开 SaaS</button>
+    </main>
+    <script src="popup.bundle.js"></script>
+  </body>
+</html>

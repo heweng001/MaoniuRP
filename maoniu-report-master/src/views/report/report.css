@@ -1,0 +1,103 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.container .header {
+  width: 40rem;
+  border: 1px solid #aaa;
+  padding: 1rem;
+}
+.container .header .btn_group {
+  display: flex;
+  justify-content: right;
+  align-items: center;
+  margin-top: 1rem;
+}
+.container .header .btn_group .cache_btn {
+  margin: 0 2rem;
+}
+.container .header .module_scroll {
+  position: fixed;
+  left: 8%;
+  top: 2%;
+}
+.container .header .module_scroll dd {
+  margin: 10px;
+}
+.container .header .module_scroll dd:hover {
+  cursor: pointer;
+}
+.container .header .module_scroll .dd_color {
+  color: #409eff;
+}
+.container .content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: start;
+  width: 75rem;
+}
+.container .content .report_header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.container .content .report_header .logo {
+  width: 100%;
+}
+.container .content .report_header p {
+  margin: 0.5rem 0;
+}
+.container .content > * {
+  width: 100%;
+}
+@media all {
+  .page-break {
+    display: none;
+  }
+}
+@media print {
+  html,
+  body {
+    height: initial !important;
+    overflow: initial !important;
+    -webkit-print-color-adjust: exact;
+  }
+}
+@media print {
+  .page-break {
+    margin-top: 1rem;
+    display: block;
+    page-break-before: auto;
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: start;
+  }
+  .content .report_header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .content .report_header .logo {
+    width: 100%;
+  } 
+ 
+  .content .report_header p {
+    margin: 0.5rem 0;
+  }
+  .content > * {
+    width: 100%;
+  }
+}
+@page {
+  size: auto;
+  margin: 1rem;
+}
+/*# sourceMappingURL=report.css.map */

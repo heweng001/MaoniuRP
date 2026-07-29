@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI操盘手-重制版</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="loginView" class="login-view hidden">
+      <div class="login-card">
+        <p class="brand-kicker">福建贸牛科技股份有限公司</p>
+        <h1>AI操盘手-重制版</h1>
+        <p class="login-desc">阿里巴巴同行数据分析 SaaS</p>
+        <form id="loginForm" class="login-form">
+          <label class="field compact">
+            <span>账号</span>
+            <input id="loginUsername" type="text" autocomplete="username" placeholder="admin" />
+          </label>
+          <label class="field compact">
+            <span>密码</span>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" />
+          </label>
+          <button type="submit" class="btn primary block">登录</button>
+          <p id="loginError" class="form-error"></p>
+        </form>
+        <p class="copyright">© 福建贸牛科技股份有限公司 · 保留所有权利</p>
+      </div>
+    </div>
+
+    <div id="appView" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand">
+          <strong>AI操盘手</strong>
+          <span>重制版</span>
+        </div>
+        <nav class="nav">
+          <button type="button" class="nav-item active" data-view="report">报告</button>
+          <button type="button" class="nav-item" data-view="cache">缓存</button>
+          <button type="button" class="nav-item" data-view="accounts">账号</button>
+        </nav>
+        <div class="sidebar-foot">
+          <div id="sidebarUser" class="sidebar-user"></div>
+          <button id="logoutBtn" type="button" class="btn ghost block">退出登录</button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <h2 id="viewTitle">报告</h2>
+          </div>
+          <div class="topbar-right">
+            <div class="plugin-bar">
+              <button id="pluginStatusBtn" type="button" class="plugin-status" title="点击查看插件说明">
+                <span class="dot" id="pluginDot"></span>
+                <span id="pluginStatusText">检测插件...</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section id="reportView" class="view active">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-head">
+                <h3>Top20 同行询盘榜</h3>
+                <p>输入关键词，通过 Chrome 插件抓取阿里巴巴同行 Top20 数据</p>
+              </div>
+              <label class="field compact">
+                <span>关键词（每行一个）</span>
+                <textarea id="top20Keywords" rows="4" placeholder="wireless charger&#10;bluetooth speaker"></textarea>
+              </label>
+              <label class="field compact">
+                <span>抓取页数</span>
+                <input id="top20SearchPageCount" type="number" min="1" max="20" step="1" value="5" />
+                <p id="top20SearchPageCountHint" class="field-hint">
+                  每个关键词抓取搜索结果页数，默认 5 页；页数越多数据越全，但耗时更长。
+                </p>
+              </label>
+              <div class="actions compact">
+                <button id="generateTop20Btn" type="button" class="btn primary">生成报告</button>
+              </div>
+              <p id="top20Status" class="status-line"></p>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h3>指定同行询盘分布</h3>
+                <p>输入阿里巴巴店铺网址，生成全店叶子类目询盘分布报告</p>
+              </div>
+              <label class="field compact">
+                <span>店铺网址</span>
+                <input id="shopUrlInput" type="text" placeholder="https://example.en.alibaba.com" />
+              </label>
+              <label class="field compact">
+                <span>每分组产品 ID 数</span>
+                <input id="shopProductsPerCategory" type="number" min="1" max="20" step="1" value="2" />
+                <p id="shopProductsPerCategoryHint" class="field-hint">
+                  完整模式会抓取 Profile 各分类、特色产品与销量页；每个分组最多取指定数量的产品 ID，默认 2 个。
+                </p>
+              </label>
+              <div class="actions compact">
+                <button id="generateShopBtn" type="button" class="btn primary">生成报告</button>
+              </div>
+              <p id="shopStatus" class="status-line"></p>
+            </div>
+          </div>
+
+          <div class="card preview-card">
+            <div class="card-head row">
+              <div>
+                <h3 id="previewTitle">报告预览</h3>
+                <p id="previewMeta">生成报告后将在此显示</p>
+              </div>
+              <div id="previewActions" class="actions compact hidden">
+                <button id="downloadHtmlBtn" type="button" class="btn secondary">下载 HTML</button>
+                <button id="downloadExcelBtn" type="button" class="btn secondary hidden">下载 Excel</button>
+                <button id="exportPdfBtn" type="button" class="btn ghost">导出 PDF</button>
+              </div>
+            </div>
+            <div id="previewEmpty" class="empty-box">暂无报告内容</div>
+            <div id="previewGenerating" class="preview-generating hidden">
+              <div class="preview-generating-panel">
+                <div class="spinner" aria-hidden="true"></div>
+                <strong id="previewGeneratingTitle">正在生成报告</strong>
+                <p id="previewGeneratingMessage">系统正在处理，请稍候...</p>
+                <p id="previewGeneratingElapsed" class="preview-generating-elapsed">已等待 0s</p>
+              </div>
+            </div>
+            <div id="previewContent" class="preview-content hidden"></div>
+          </div>
+        </section>
+
+        <section id="cacheView" class="view">
+          <div class="card">
+            <div class="card-head row">
+              <div>
+                <h3>报告缓存</h3>
+                <p>查看所有已生成的报告记录，点击可重新打开</p>
+              </div>
+              <button id="refreshCacheBtn" type="button" class="btn secondary">刷新</button>
+            </div>
+            <div class="cache-filters">
+              <label class="field compact inline">
+                <span>对象</span>
+                <select id="cacheFilterObject">
+                  <option value="">全部</option>
+                </select>
+              </label>
+              <label class="field compact inline">
+                <span>类型</span>
+                <select id="cacheFilterType">
+                  <option value="">全部</option>
+                  <option value="top20">Top20同行报告</option>
+                  <option value="shop-inquiry">指定同行报告</option>
+                </select>
+              </label>
+              <label class="field compact inline">
+                <span>生成人</span>
+                <select id="cacheFilterCreator">
+                  <option value="">全部</option>
+                </select>
+              </label>
+              <button id="cacheFilterResetBtn" type="button" class="btn ghost">重置筛选</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>对象</th>
+                    <th>类型</th>
+                    <th>生成人</th>
+                    <th>生成时间</th>
+                    <th>插件版本</th>
+                    <th>询盘数</th>
+                    <th>参数</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                  </tr>
+                </thead>
+                <tbody id="cacheTableBody">
+                  <tr><td colspan="9" class="empty-cell">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="accountsView" class="view">
+          <div class="grid-2">
+            <div class="card" id="accountFormCard">
+              <div class="card-head">
+                <h3 id="accountFormTitle">新建账号</h3>
+                <p id="accountFormDesc">管理员可创建经理 / 员工账号，并指定上级人员</p>
+              </div>
+              <form id="accountForm" class="account-form">
+                <input id="accountEditId" type="hidden" />
+                <label class="field compact">
+                  <span>用户名</span>
+                  <input id="accountUsername" type="text" required />
+                </label>
+                <label class="field compact">
+                  <span>密码</span>
+                  <input id="accountPassword" type="password" placeholder="新建必填，编辑留空则不修改" />
+                </label>
+                <label class="field compact">
+                  <span>账号类型</span>
+                  <select id="accountRole">
+                    <option value="employee">员工</option>
+                    <option value="manager">经理</option>
+                    <option value="admin">管理员</option>
+                  </select>
+                </label>
+                <label class="field compact">
+                  <span>上级人员</span>
+                  <select id="accountParentId">
+                    <option value="">无</option>
+                  </select>
+                </label>
+                <div class="actions compact">
+                  <button type="submit" class="btn primary">保存账号</button>
+                  <button id="resetAccountFormBtn" type="button" class="btn ghost">重置</button>
+                </div>
+                <p id="accountFormError" class="form-error"></p>
+              </form>
+            </div>
+
+            <div class="card">
+              <div class="card-head row">
+                <div>
+                  <h3>账号列表</h3>
+                  <p id="accountsListDesc">支持增删改查</p>
+                </div>
+                <button id="refreshAccountsBtn" type="button" class="btn secondary">刷新</button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>用户名</th>
+                      <th>类型</th>
+                      <th>上级</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accountsTableBody">
+                    <tr><td colspan="4" class="empty-cell">加载中...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="captchaGuideModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-captcha-modal="true"></div>
+      <div class="modal-panel compact-modal captcha-modal">
+        <div class="modal-head">
+          <h3>需要完成阿里巴巴验证</h3>
+          <button type="button" class="btn ghost" data-close-captcha-modal="true">关闭</button>
+        </div>
+        <div class="modal-body compact-body">
+          <p id="captchaGuideDesc" class="guide-desc">
+            阿里巴巴检测到异常访问，请先在新标签页完成滑块/人机验证，然后回到本页重新生成报告。
+          </p>
+          <ol class="guide-list captcha-steps">
+            <li>点击下方「打开验证页」，在新标签页完成验证码</li>
+            <li>确认已登录 <a href="https://i.alibaba.com" target="_blank" rel="noreferrer">i.alibaba.com</a></li>
+            <li>验证完成后，点击「继续生成」，系统将自动重新抓取并生成报告</li>
+          </ol>
+          <div class="captcha-modal-actions">
+            <button id="captchaOpenBtn" type="button" class="btn primary">打开验证页</button>
+            <button id="captchaContinueBtn" type="button" class="btn secondary">继续生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pluginGuideModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-panel compact-modal">
+        <div class="modal-head">
+          <h3 id="pluginGuideTitle">Chrome 插件安装说明</h3>
+          <button type="button" class="btn ghost" data-close-modal="true">关闭</button>
+        </div>
+        <div class="modal-body compact-body">
+          <p id="pluginGuideDesc" class="guide-desc hidden"></p>
+          <div id="pluginUpdateNotice" class="update-notice hidden">
+            <strong id="pluginUpdateNoticeTitle">插件版本过低</strong>
+            <p id="pluginUpdateNoticeText"></p>
+          </div>
+          <div class="modal-actions-top">
+            <a id="downloadExtensionBtn" class="btn primary" href="#">下载 Chrome 插件</a>
+            <button id="recheckExtensionBtn" type="button" class="btn secondary hidden">重新检测版本</button>
+            <span id="extensionVersionBadge" class="badge">版本检测中...</span>
+          </div>
+          <ol id="pluginInstallSteps" class="guide-list">
+            <li>下载并解压插件包，文件夹内应包含 <code>manifest.json</code></li>
+            <li>打开 <a href="chrome://extensions/" target="_blank" rel="noreferrer">chrome://extensions</a>，开启开发者模式</li>
+            <li>点击「加载已解压的扩展程序」，选择解压后的文件夹</li>
+            <li>刷新本页，系统会自动识别插件；并登录 <a href="https://i.alibaba.com" target="_blank" rel="noreferrer">i.alibaba.com</a></li>
+          </ol>
+          <ol id="pluginUpdateSteps" class="guide-list hidden">
+            <li>系统已尝试自动下载最新插件包；若浏览器未弹出下载，请点击上方「下载 Chrome 插件」</li>
+            <li>解压下载的 zip 包，确认文件夹内有 <code>manifest.json</code>，且版本号为最新</li>
+            <li>打开 <a href="chrome://extensions/" target="_blank" rel="noreferrer">chrome://extensions</a></li>
+            <li>找到旧版「AI操盘手-重制版」，点击<strong>移除</strong>（或先关闭再删除旧文件夹）</li>
+            <li>点击「加载已解压的扩展程序」，选择<strong>刚解压的新文件夹</strong></li>
+            <li>刷新本页，系统会自动识别新安装的插件</li>
+            <li>回到本页点击「重新检测版本」，显示最新版本后再生成报告</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="/shopUrlUtil.js"></script>
+    <script src="/shopTreeClient.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

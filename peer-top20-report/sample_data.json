@@ -1,0 +1,67 @@
+{
+  "sameIndustryAnalyseList": [
+    {
+      "keyword": "wireless charger",
+      "effectDataCategoryGrouped": [
+        {
+          "category": "Wireless Chargers",
+          "value": [
+            {
+              "companyName": "Shenzhen TechPower Co., Ltd.",
+              "home": "https://techpower.en.alibaba.com",
+              "mainProducts": "Wireless charger, Power bank, USB cable",
+              "totalProductCount": "256",
+              "pageViews": "12,580",
+              "iquiries": "186",
+              "transactionNumber": "45",
+              "transactionPrice": "128,500",
+              "displayStarLevel": "4",
+              "supplierYear": "8"
+            },
+            {
+              "companyName": "Guangzhou SmartLink Electronics",
+              "home": "https://smartlink.en.alibaba.com",
+              "mainProducts": "Fast wireless charger, Car charger",
+              "totalProductCount": "189",
+              "pageViews": "10,420",
+              "iquiries": "152",
+              "transactionNumber": "38",
+              "transactionPrice": "96,800",
+              "displayStarLevel": "4",
+              "supplierYear": "6"
+            },
+            {
+              "companyName": "Dongguan ChargeMax Technology",
+              "home": "https://chargemax.en.alibaba.com",
+              "mainProducts": "MagSafe charger, Desktop wireless charger",
+              "totalProductCount": "142",
+              "pageViews": "8,960",
+              "iquiries": "118",
+              "transactionNumber": "29",
+              "transactionPrice": "72,300",
+              "displayStarLevel": "3",
+              "supplierYear": "5"
+            }
+          ]
+        },
+        {
+          "category": "Mobile Phone Chargers",
+          "value": [
+            {
+              "companyName": "Hangzhou MobilePro Trading",
+              "home": "https://mobilepro.en.alibaba.com",
+              "mainProducts": "Phone charger, Adapter, Cable",
+              "totalProductCount": "320",
+              "pageViews": "15,200",
+              "iquiries": "210",
+              "transactionNumber": "52",
+              "transactionPrice": "145,600",
+              "displayStarLevel": "5",
+              "supplierYear": "10"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

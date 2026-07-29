@@ -1,0 +1,14 @@
+.top-ranking-tag {
+  background-position: 50%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-sizing: border-box;
+  color: #222;
+  font-size: 13px;
+  font-weight: 700;
+  height: 32px;
+  line-height: 18px;
+  padding: 4px 0 10px;
+  text-align: center;
+  width: 32px;
+}

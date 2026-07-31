@@ -2,12 +2,23 @@
 
 import { normalizeAlibabaShopUrl } from './shopUrl.js';
 
+function truncateText(text, maxLen = 28) {
+  const value = String(text || '').trim();
+  if (value.length <= maxLen) {
+    return value;
+  }
+  return `${value.slice(0, maxLen)}…`;
+}
+
 function renderTable(category) {
   const rows = category.rows
     .map((row) => {
+      const companyName = truncateText(row.companyName, 24);
+      const mainProducts = truncateText(row.mainProducts, 22);
+      const platformCategory = truncateText(row.platformCategory || '-', 24);
       const companyCell = row.home
-        ? `<a href="${row.home}" target="_blank" rel="noreferrer">${row.companyName}</a>`
-        : `${row.companyName}`;
+        ? `<a href="${row.home}" target="_blank" rel="noreferrer" title="${row.companyName}">${companyName}</a>`
+        : `<span title="${row.companyName}">${companyName}</span>`;
       const shopNormalized = normalizeAlibabaShopUrl(row.home || '');
       const shopCell = shopNormalized.valid
         ? `<a href="${shopNormalized.shopUrl}" target="_blank" rel="noreferrer">查全店询盘</a>`
@@ -15,9 +26,9 @@ function renderTable(category) {
       return `
         <tr>
           <td class="center">第${row.rank}名</td>
-          <td class="center">${companyCell}</td>
-          <td class="center">${row.mainProducts}</td>
-          <td class="center">${row.platformCategory || '-'}</td>
+          <td class="center col-company">${companyCell}</td>
+          <td class="center col-main" title="${row.mainProducts}">${mainProducts}</td>
+          <td class="center col-category" title="${row.platformCategory || '-'}">${platformCategory}</td>
           <td class="center">${row.pageViews}</td>
           <td class="center">${row.inquiries}</td>
           <td class="center">${row.inquiryRate}</td>
@@ -106,8 +117,10 @@ export function generateHtmlReport(reports, { title, selectedCategory } = {}) {
     .meta { color: #6b7280; margin-bottom: 16px; font-size: 11px; }
     h2 { font-size: 14px; margin: 0 0 8px; }
     .note { color: #6b7280; font-size: 11px; line-height: 1.5; margin-bottom: 10px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th, td { border: 1px solid #d1d5db; padding: 5px 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+    th, td { border: 1px solid #d1d5db; padding: 5px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .col-company, .col-main, .col-category { width: 12%; }
+    .col-main { width: 10%; }
     th { background: #f3f4f6; font-weight: 600; }
     .center { text-align: center; }
     .summary-row { background: #fffbeb; font-weight: 600; }

@@ -254,28 +254,64 @@ function buildShopVerificationUrls(shopUrl, captchaUrl) {
   return urls;
 }
 
+function buildTop20VerificationUrls(primaryUrl, keywords) {
+  const searchUrl = keywords[0]
+    ? `https://www.alibaba.com/trade/search?fsb=y&IndexArea=product_en&CatId=&SearchText=${encodeURIComponent(keywords[0])}`
+    : 'https://www.alibaba.com/trade/search';
+  const urls = [];
+  const seen = new Set();
+  const add = (url, label) => {
+    const normalized = String(url || '').trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    urls.push({ url: normalized, label });
+  };
+
+  add(primaryUrl, inferCaptchaLabel(primaryUrl));
+  add('https://www.alibaba.com/detail/compareProducts.html', 'Compare 对比页');
+  if (primaryUrl !== searchUrl) {
+    add(searchUrl, '产品搜索页');
+  }
+  add('https://i.alibaba.com', '阿里巴巴后台登录页');
+  return urls;
+}
+
+function inferCaptchaLabel(url = '') {
+  const text = String(url);
+  if (/product-detail|\/detail\//i.test(text)) {
+    return '触发验证的类目解析页';
+  }
+  if (/compareProducts/i.test(text)) {
+    return 'Compare 对比页';
+  }
+  if (/trade\/search/i.test(text)) {
+    return '产品搜索页';
+  }
+  return '触发验证的页面';
+}
+
 function enrichTop20CaptchaResponse(result, query) {
   if (!result?.data?.isExistVerificationCode) {
     return result;
   }
 
   const keywords = (query?.keywordArray || []).filter(Boolean);
-  const searchUrl =
-    result.data.verificationCodeUrlPage ||
-    (keywords[0]
-      ? `https://www.alibaba.com/trade/search?fsb=y&IndexArea=product_en&CatId=&SearchText=${encodeURIComponent(keywords[0])}`
-      : 'https://www.alibaba.com/trade/search');
+  const searchUrl = keywords[0]
+    ? `https://www.alibaba.com/trade/search?fsb=y&IndexArea=product_en&CatId=&SearchText=${encodeURIComponent(keywords[0])}`
+    : 'https://www.alibaba.com/trade/search';
+  const primaryUrl = result.data.verificationCodeUrlPage || searchUrl;
 
   result.isExistVerificationCode = true;
   result.captcha = true;
-  result.verificationUrl = searchUrl;
-  result.verificationUrls = [
-    { url: searchUrl, label: '触发验证的搜索页' },
-    { url: 'https://www.alibaba.com/detail/compareProducts.html', label: 'Compare 对比页' },
-    { url: 'https://i.alibaba.com', label: '阿里巴巴后台登录页' },
-  ];
+  result.verificationUrl = primaryUrl;
+  result.verificationUrls = buildTop20VerificationUrls(primaryUrl, keywords);
   if (!result.message) {
-    result.message = '阿里巴巴出现验证码，请先完成验证后再试';
+    result.message =
+      result.data.captchaSource === 'detail'
+        ? '阿里巴巴在类目解析时出现验证码，请打开实际触发验证的页面完成验证后再试'
+        : '阿里巴巴出现验证码，请先完成验证后再试';
   }
   return result;
 }

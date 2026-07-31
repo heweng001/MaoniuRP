@@ -119,6 +119,23 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+function truncateText(text, maxLen = 28) {
+  const value = String(text || '').trim();
+  if (value.length <= maxLen) {
+    return value;
+  }
+  return `${value.slice(0, maxLen)}…`;
+}
+
+function renderEllipsisCell(text, maxLen = 28) {
+  const full = String(text || '').trim() || '-';
+  const short = truncateText(full, maxLen);
+  if (short === full) {
+    return escapeHtml(full);
+  }
+  return `<span class="cell-ellipsis" title="${escapeHtml(full)}">${escapeHtml(short)}</span>`;
+}
+
 function parseKeywords(text) {
   return String(text || '')
     .split(/[\n,，;；]+/)
@@ -372,10 +389,11 @@ function resolveVerificationLinks(response = {}) {
     });
   }
 
-  add(response.verificationUrl, '优先打开的验证页');
-  add(response.data?.verificationCodeUrlPage, '触发验证的搜索页');
+  add(response.verificationUrl, '触发验证的页面');
+  add(response.data?.verificationCodeUrlPage, '触发验证的页面');
   add(response.verifyUrl, '验证页面');
   add(response.captchaUrl, '验证页面');
+  add('https://www.alibaba.com/detail/compareProducts.html', 'Compare 对比页');
 
   if (!links.length) {
     add('https://i.alibaba.com', '阿里巴巴后台登录页');
@@ -591,19 +609,34 @@ function renderShopInquiryActionCell(home) {
   return `<button type="button" class="btn ghost shop-inquiry-btn" data-shop-url="${escapeHtml(normalized.shopUrl)}">查全店询盘</button>`;
 }
 
-function getTop20CategoryOptions(reports = []) {
-  const categories = [];
-  const seen = new Set();
+function bindAdvancedPanels() {
+  document.querySelectorAll('.advanced-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      const panel = document.getElementById(button.dataset.target || '');
+      if (!panel) {
+        return;
+      }
+      const expanded = panel.classList.toggle('hidden') === false;
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.textContent = expanded ? '收起高级' : '高级';
+    });
+  });
+}
+
+function getTop20CategoryStats(reports = []) {
+  const stats = new Map();
   for (const report of reports || []) {
     for (const category of report.categories || []) {
-      if (!category?.category || seen.has(category.category)) {
+      if (!category?.category) {
         continue;
       }
-      seen.add(category.category);
-      categories.push(category.category);
+      const count = Number(category.totalCount || category.rows?.length || 0);
+      stats.set(category.category, (stats.get(category.category) || 0) + count);
     }
   }
-  return categories;
+  return [...stats.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category, 'zh-CN'));
 }
 
 function resolveTop20Category(report, selectedCategory = '') {
@@ -620,32 +653,30 @@ function resolveTop20Category(report, selectedCategory = '') {
 }
 
 function populateTop20CategoryFilter(reports = []) {
-  const categories = getTop20CategoryOptions(reports);
+  const categoryStats = getTop20CategoryStats(reports);
   if (!top20CategoryFilter || !top20CategoryFilterWrap) {
     return;
   }
-  if (!categories.length) {
+  if (!categoryStats.length) {
     top20CategoryFilterWrap.classList.add('hidden');
     top20CategoryFilter.innerHTML = '';
     state.top20SelectedCategory = '';
     return;
   }
   top20CategoryFilterWrap.classList.remove('hidden');
-  top20CategoryFilter.innerHTML = categories
+  top20CategoryFilter.innerHTML = categoryStats
     .map(
-      (category) =>
-        `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`,
+      ({ category, count }) =>
+        `<option value="${escapeHtml(category)}">${escapeHtml(category)}（${count}）</option>`,
     )
     .join('');
-  if (
-    state.top20SelectedCategory &&
-    categories.includes(state.top20SelectedCategory)
-  ) {
+  const available = categoryStats.map((item) => item.category);
+  if (state.top20SelectedCategory && available.includes(state.top20SelectedCategory)) {
     top20CategoryFilter.value = state.top20SelectedCategory;
-  } else {
-    state.top20SelectedCategory = categories[0];
-    top20CategoryFilter.value = categories[0];
+    return;
   }
+  state.top20SelectedCategory = categoryStats[0].category;
+  top20CategoryFilter.value = categoryStats[0].category;
 }
 
 function refreshTop20Preview() {
@@ -671,10 +702,10 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
         .map(
           (row) => `
           <tr>
-            <td>第${row.rank}名</td>
-            <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
-            <td>${escapeHtml(row.mainProducts)}</td>
-            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
+            <td class="col-rank">第${row.rank}名</td>
+            <td class="col-company">${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer" class="cell-ellipsis" title="${escapeHtml(row.companyName)}">${escapeHtml(truncateText(row.companyName, 24))}</a>` : renderEllipsisCell(row.companyName, 24)}</td>
+            <td class="col-main">${renderEllipsisCell(row.mainProducts, 22)}</td>
+            <td class="col-category">${renderEllipsisCell(row.platformCategory || row.categoryName || '-', 24)}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -692,10 +723,10 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
           <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。</p>
           ${totalHint}
-          <table class="report-table">
+          <table class="report-table table-balanced">
             <thead>
               <tr>
-                <th>排名</th><th>公司</th><th>主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th class="col-rank">排名</th><th class="col-company">公司</th><th class="col-main">主营</th><th class="col-category">类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th><th>查全店询盘</th>
               </tr>
             </thead>
@@ -729,10 +760,10 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
         .map(
           (row) => `
           <tr>
-            <td>第${row.rank}名</td>
-            <td>${escapeHtml(row.companyName)}</td>
-            <td>${escapeHtml(row.mainProducts)}</td>
-            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
+            <td class="col-rank">第${row.rank}名</td>
+            <td class="col-company">${renderEllipsisCell(row.companyName, 24)}</td>
+            <td class="col-main">${renderEllipsisCell(row.mainProducts, 22)}</td>
+            <td class="col-category">${renderEllipsisCell(row.platformCategory || row.categoryName || '-', 24)}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -748,10 +779,10 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
         <section class="report-section">
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
           <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。PDF 仅导出当前类目前 20 名同行。</p>
-          <table>
+          <table class="report-table table-balanced">
             <thead>
               <tr>
-                <th>排名</th><th>公司</th><th>主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th class="col-rank">排名</th><th class="col-company">公司</th><th class="col-main">主营</th><th class="col-category">类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th>
               </tr>
             </thead>
@@ -2190,9 +2221,11 @@ function initAppAfterLogin() {
   bindCacheFilters();
   bindCaptchaGuideModal();
   bindLoginGuideModal();
+  bindAdvancedPanels();
   if (isAdminUser()) {
     configureAccountFormAccess({ editing: false });
   }
+  bindAdvancedPanels();
   listenForExtensionIdMessage();
   syncExtensionInfoFromServer().then(() => probeExtension());
   startExtensionInfoSync();

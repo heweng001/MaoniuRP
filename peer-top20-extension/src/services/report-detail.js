@@ -96,6 +96,7 @@ const reportDetailService = {
         if (isBoolean(sameIndustryAnalyse)) {
           data.isExistVerificationCode = true;
           data.verificationCodeUrlPage = `https://www.alibaba.com/trade/search?fsb=y&IndexArea=product_en&CatId=&SearchText=${encodeURIComponent(keyword)}`;
+          data.captchaSource = 'search';
           errorArr.push(`${keyword}(验证码)`);
           continue;
         }
@@ -107,8 +108,11 @@ const reportDetailService = {
         console.error(error);
         if (error instanceof CaptchaError) {
           data.isExistVerificationCode = true;
-          data.verificationCodeUrlPage =
-            error.verifyUrl || error.captchaUrl || data.verificationCodeUrlPage || '';
+          const captchaPage = error.captchaUrl || error.verifyUrl || '';
+          if (captchaPage) {
+            data.verificationCodeUrlPage = captchaPage;
+            data.captchaSource = 'detail';
+          }
           errorArr.push(`${keyword}(验证码)`);
           continue;
         }
@@ -125,8 +129,9 @@ const reportDetailService = {
       timings: mergeTop20Timings(sameIndustryAnalyseList),
     });
 
-    if (data.isExistVerificationCode) {
+    if (data.isExistVerificationCode && !data.verificationCodeUrlPage) {
       data.verificationCodeUrlPage = `https://www.alibaba.com/trade/search?fsb=y&IndexArea=product_en&CatId=&SearchText=${encodeURIComponent(keywords[0])}`;
+      data.captchaSource = 'search';
     }
 
     if (errorArr.length > 0 && !sameIndustryAnalyseList.length) {

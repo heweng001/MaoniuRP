@@ -72,15 +72,18 @@
                 <span>关键词（每行一个）</span>
                 <textarea id="top20Keywords" rows="4" placeholder="wireless charger&#10;bluetooth speaker"></textarea>
               </label>
-              <label class="field compact">
-                <span>抓取参数</span>
-                <input id="top20SearchPageCount" type="number" min="1" max="20" step="1" value="5" />
-                <p id="top20SearchPageCountHint" class="field-hint">
-                  可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
-                </p>
-              </label>
-              <div class="actions compact">
+              <div class="actions compact row-actions">
                 <button id="generateTop20Btn" type="button" class="btn primary">生成报告</button>
+                <button type="button" class="btn ghost advanced-toggle" data-target="top20AdvancedPanel" aria-expanded="false">高级</button>
+              </div>
+              <div id="top20AdvancedPanel" class="advanced-panel hidden">
+                <label class="field compact">
+                  <span>抓取参数</span>
+                  <input id="top20SearchPageCount" type="number" min="1" max="20" step="1" value="5" />
+                  <p id="top20SearchPageCountHint" class="field-hint">
+                    可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
+                  </p>
+                </label>
               </div>
               <p id="top20Status" class="status-line"></p>
             </div>
@@ -94,15 +97,18 @@
                 <span>店铺网址</span>
                 <input id="shopUrlInput" type="text" placeholder="https://example.en.alibaba.com" />
               </label>
-              <label class="field compact">
-                <span>抓取参数</span>
-                <input id="shopProductsPerCategory" type="number" min="1" max="20" step="1" value="2" />
-                <p id="shopProductsPerCategoryHint" class="field-hint">
-                  可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
-                </p>
-              </label>
-              <div class="actions compact">
+              <div class="actions compact row-actions">
                 <button id="generateShopBtn" type="button" class="btn primary">生成报告</button>
+                <button type="button" class="btn ghost advanced-toggle" data-target="shopAdvancedPanel" aria-expanded="false">高级</button>
+              </div>
+              <div id="shopAdvancedPanel" class="advanced-panel hidden">
+                <label class="field compact">
+                  <span>抓取参数</span>
+                  <input id="shopProductsPerCategory" type="number" min="1" max="20" step="1" value="2" />
+                  <p id="shopProductsPerCategoryHint" class="field-hint">
+                    可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
+                  </p>
+                </label>
               </div>
               <p id="shopStatus" class="status-line"></p>
             </div>

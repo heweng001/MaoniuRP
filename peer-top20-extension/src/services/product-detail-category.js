@@ -1,6 +1,7 @@
 import { peerFetch } from 'common';
 import { getNested } from 'util/index';
 import { CaptchaError } from './compare-products.js';
+import { captureDetailFailureSample } from './scrape-failure-stats.js';
 
 export { CaptchaError };
 
@@ -324,10 +325,22 @@ export function formatCategoryDisplay(categoryInfo) {
   return String(categoryInfo.categoryName || categoryInfo.categoryId || '-');
 }
 
+function noteDetailFailure(options, payload) {
+  captureDetailFailureSample(options.diagnostics, payload);
+  if (options.debugContext?.enabled) {
+    options.debugContext.detailPage = payload;
+  }
+  if (typeof options.onDetailFailure === 'function') {
+    options.onDetailFailure(payload);
+  }
+}
+
 export async function fetchProductDetailCategory(productDetailUrl, options = {}) {
   const {
     verifyUrl = 'https://www.alibaba.com/detail/compareProducts.html',
     debugContext = null,
+    diagnostics = null,
+    onDetailFailure = null,
     timeout = 25000,
     productId = '',
   } = options;
@@ -347,30 +360,32 @@ export async function fetchProductDetailCategory(productDetailUrl, options = {})
   assertNotCaptcha(html, url, verifyUrl);
 
   if (isBlockedDetailPage(html)) {
-    if (debugContext?.enabled) {
-      debugContext.detailPage = {
+    noteDetailFailure(
+      { debugContext, diagnostics, onDetailFailure },
+      {
         url,
         reason: 'login-or-block-page',
         htmlLength: html.length,
         snippet: html.slice(0, 400),
-      };
-    }
+      },
+    );
     return null;
   }
 
   const detailData = parseProductDetail(html);
   const { categoryId, categoryName, categoryPath } = getCategoryInfo(detailData, html);
   if (!categoryId) {
-    if (debugContext?.enabled) {
-      debugContext.detailPage = {
+    noteDetailFailure(
+      { debugContext, diagnostics, onDetailFailure },
+      {
         url,
         reason: 'category-not-found',
         htmlLength: html.length,
         hasDetailData: Boolean(detailData),
         productId: extractProductIdFromUrl(url),
         snippet: html.slice(0, 400),
-      };
-    }
+      },
+    );
     return null;
   }
 

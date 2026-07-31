@@ -31,7 +31,7 @@ DEFAULT_OUTPUT_DIR = Path(__file__).parent / "output"
 def build_output_paths(keyword: str, output_dir: Path) -> tuple[Path, Path]:
     date_str = datetime.now().strftime("%Y-%m-%d")
     safe_keyword = keyword.replace("/", "-").replace("\\", "-").strip() or "report"
-    base_name = f"{safe_keyword}-询盘top20店铺明细表-{date_str}"
+    base_name = f"{safe_keyword}-top同行询盘榜-{date_str}"
     return output_dir / f"{base_name}.html", output_dir / f"{base_name}.xlsx"
 
 
@@ -74,9 +74,13 @@ def main() -> int:
         print("错误：未找到可处理的同行数据", file=sys.stderr)
         return 1
 
-    keyword_label = reports[0].keyword if len(reports) == 1 else "multi-keywords"
+    keyword_label = (
+        reports[0].keyword
+        if len(reports) == 1
+        else "、".join(report["keyword"] for report in reports)
+    )
     html_path, excel_path = build_output_paths(keyword_label, output_dir)
-    title = f"{keyword_label}-询盘top20店铺明细表-{datetime.now().strftime('%Y-%m-%d')}"
+    title = f"{keyword_label}-top同行询盘榜-{datetime.now().strftime('%Y-%m-%d')}"
 
     generated: list[str] = []
 

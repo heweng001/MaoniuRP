@@ -89,7 +89,7 @@ function parseArgs(argv) {
 function buildOutputPaths(keyword, outputDir) {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeKeyword = (keyword || 'report').replace(/[\\/]/g, '-');
-  const baseName = `${safeKeyword}-询盘top20店铺明细表-${dateStr}`;
+  const baseName = `${safeKeyword}-top同行询盘榜-${dateStr}`;
   return {
     html: path.join(outputDir, `${baseName}.html`),
     excel: path.join(outputDir, `${baseName}.xlsx`),
@@ -144,9 +144,12 @@ async function main() {
     return 1;
   }
 
-  const keywordLabel = reports.length === 1 ? reports[0].keyword : 'multi-keywords';
-  const outputPaths = buildOutputPaths(keywordLabel, args.outputDir);
-  const title = `${keywordLabel}-询盘top20店铺明细表-${new Date().toISOString().slice(0, 10)}`;
+  const keywordLabel =
+    reports.length === 1
+      ? reports[0].keyword
+      : reports.map((report) => report.keyword).join('、');
+  const outputPaths = buildOutputPaths(keywordLabel.replace(/[\\/:*?"<>|]/g, '-'), args.outputDir);
+  const title = `${keywordLabel.replace(/[\\/:*?"<>|]/g, '-')}-top同行询盘榜-${new Date().toISOString().slice(0, 10)}`;
   const generated = [];
 
   if (!args.excelOnly) {

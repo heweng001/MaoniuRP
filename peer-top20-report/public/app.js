@@ -3,6 +3,8 @@ const DEFAULT_TOP20_SEARCH_PAGE_COUNT = 5;
 const DEFAULT_SHOP_PRODUCTS_PER_CATEGORY = 2;
 const SCRAPE_PARAM_HINT =
   '可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。';
+const REPORT_DATA_NOTE =
+  '报告中的访客，询盘，订单量，订单额均为最近6个月的汇总数据，订单额单位为usd';
 const ALIBABA_LOGIN_URL = 'https://i.alibaba.com';
 const EXTENSION_ID_KEYS = ['peer-top20-extension-id', 'ai-plugin-id'];
 const EXTENSION_INFO_SYNC_MS = 15000;
@@ -26,15 +28,23 @@ const state = {
   },
   cacheItems: [],
   cacheCollapsedGroups: new Set(),
+  performanceExpandedIds: new Set(),
+  performanceItems: [],
   pendingCaptchaRetry: null,
   users: [],
   top20SelectedCategory: '',
+  accountCreateMode: false,
 };
 
 const loginView = document.getElementById('loginView');
 const appView = document.getElementById('appView');
 const loginForm = document.getElementById('loginForm');
 const loginError = document.getElementById('loginError');
+const registerForm = document.getElementById('registerForm');
+const registerError = document.getElementById('registerError');
+const registerSuccess = document.getElementById('registerSuccess');
+const showRegisterBtn = document.getElementById('showRegisterBtn');
+const showLoginBtn = document.getElementById('showLoginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const sidebarUser = document.getElementById('sidebarUser');
 const viewTitle = document.getElementById('viewTitle');
@@ -45,6 +55,7 @@ const pluginGuideModal = document.getElementById('pluginGuideModal');
 const captchaGuideModal = document.getElementById('captchaGuideModal');
 const captchaGuideDesc = document.getElementById('captchaGuideDesc');
 const captchaOpenBtn = document.getElementById('captchaOpenBtn');
+const captchaOpenHint = document.getElementById('captchaOpenHint');
 const captchaContinueBtn = document.getElementById('captchaContinueBtn');
 const loginGuideModal = document.getElementById('loginGuideModal');
 const loginGuideDesc = document.getElementById('loginGuideDesc');
@@ -80,7 +91,6 @@ const previewGeneratingElapsed = document.getElementById('previewGeneratingElaps
 const previewContent = document.getElementById('previewContent');
 const previewActions = document.getElementById('previewActions');
 const downloadHtmlBtn = document.getElementById('downloadHtmlBtn');
-const downloadExcelBtn = document.getElementById('downloadExcelBtn');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
 const top20CategoryFilterWrap = document.getElementById('top20CategoryFilterWrap');
 const top20CategoryFilter = document.getElementById('top20CategoryFilter');
@@ -89,6 +99,16 @@ const listedProductsModalTitle = document.getElementById('listedProductsModalTit
 const listedProductsModalBody = document.getElementById('listedProductsModalBody');
 
 const PDF_FOOTER_TEXT = '本报告数据由ai操盘手提供，如对报告数据有疑问可加微信 maoniuchaoren。';
+
+function buildTop20SectionTitle(keyword, categoryName) {
+  return `关键词${keyword}对应的叶子类目「${categoryName}」按近6个月询盘数据排名如下：`;
+}
+
+function buildPdfFooterText(type) {
+  const param =
+    type === 'shop-inquiry' ? getShopProductsPerCategory() : getTop20SearchPageCount();
+  return `${PDF_FOOTER_TEXT} 抓取参数${param}。`;
+}
 let generatingTimer = null;
 let generatingStartedAt = 0;
 
@@ -98,6 +118,9 @@ const cacheFilterObject = document.getElementById('cacheFilterObject');
 const cacheFilterType = document.getElementById('cacheFilterType');
 const cacheFilterCreator = document.getElementById('cacheFilterCreator');
 const cacheFilterResetBtn = document.getElementById('cacheFilterResetBtn');
+const performanceNavItem = document.getElementById('performanceNavItem');
+const performanceTableBody = document.getElementById('performanceTableBody');
+const refreshPerformanceBtn = document.getElementById('refreshPerformanceBtn');
 const accountsTableBody = document.getElementById('accountsTableBody');
 const refreshAccountsBtn = document.getElementById('refreshAccountsBtn');
 const createAccountBtn = document.getElementById('createAccountBtn');
@@ -111,6 +134,8 @@ const accountUsername = document.getElementById('accountUsername');
 const accountPassword = document.getElementById('accountPassword');
 const accountRole = document.getElementById('accountRole');
 const accountParentId = document.getElementById('accountParentId');
+const accountInviteCode = document.getElementById('accountInviteCode');
+const accountInviteCodeWrap = document.getElementById('accountInviteCodeWrap');
 const accountFormError = document.getElementById('accountFormError');
 const resetAccountFormBtn = document.getElementById('resetAccountFormBtn');
 
@@ -263,8 +288,11 @@ function buildPdfFilename() {
   const dateStamp = formatPdfDateStamp();
   if (state.preview.type === 'top20') {
     const keywords = parseKeywords(top20Keywords.value);
-    const keyword = sanitizeFilenamePart(keywords[0] || 'report', 40);
-  return `${keyword}-top同行榜-${dateStamp}.pdf`;
+    const label = sanitizeFilenamePart(
+      keywords.length === 1 ? keywords[0] : keywords.join('、'),
+      80,
+    );
+    return `${label}-top同行询盘榜-${dateStamp}.pdf`;
   }
   if (state.preview.type === 'shop-inquiry') {
     const base = sanitizeFilenamePart(state.preview.title || '指定同行询盘分布');
@@ -345,7 +373,7 @@ function bindShopProductsPerCategory() {
 }
 
 function getShopGeneratingMessage(productsPerCategory = getShopProductsPerCategory()) {
-  return `正在抓取 Profile 分类、特色产品与销量页（参数${productsPerCategory}），大店通常需 30–50 秒，请勿关闭页面`;
+  return `插件正在抓取阿里巴巴数据（参数${productsPerCategory}），通常需要 10–30 秒，请勿关闭页面`;
 }
 
 function resolvePrimaryVerificationUrl(response = {}) {
@@ -388,11 +416,24 @@ function resolveVerificationLinks(response = {}) {
   return links;
 }
 
+function resetCaptchaOpenButton() {
+  if (captchaOpenBtn) {
+    captchaOpenBtn.disabled = false;
+    captchaOpenBtn.textContent = '打开验证页';
+  }
+  if (captchaOpenHint) {
+    captchaOpenHint.textContent = '';
+    captchaOpenHint.classList.add('hidden');
+  }
+}
+
 function showCaptchaGuideModal(response = {}) {
   const message =
     response.message ||
     response.data?.message ||
     '阿里巴巴检测到异常访问，请先完成验证码后再重新生成报告。';
+
+  resetCaptchaOpenButton();
 
   if (captchaGuideDesc) {
     captchaGuideDesc.textContent = message;
@@ -407,6 +448,7 @@ function showCaptchaGuideModal(response = {}) {
 
 function hideCaptchaGuideModal() {
   captchaGuideModal?.classList.add('hidden');
+  resetCaptchaOpenButton();
 }
 
 function isCaptchaResponse(response = {}) {
@@ -456,9 +498,19 @@ async function openVerificationPage(url) {
 }
 
 function bindCaptchaGuideModal() {
-  captchaOpenBtn?.addEventListener('click', (event) => {
+  captchaOpenBtn?.addEventListener('click', async (event) => {
     event.preventDefault();
-    openVerificationPage(captchaOpenBtn.dataset.url);
+    if (captchaOpenBtn.disabled) {
+      return;
+    }
+    captchaOpenBtn.disabled = true;
+    captchaOpenBtn.textContent = '已打开验证页';
+    if (captchaOpenHint) {
+      captchaOpenHint.textContent =
+        '验证页已在新标签页打开，请完成验证后点击「继续生成」，无需重复打开。';
+      captchaOpenHint.classList.remove('hidden');
+    }
+    await openVerificationPage(captchaOpenBtn.dataset.url);
   });
 
   captchaContinueBtn?.addEventListener('click', (event) => {
@@ -551,16 +603,12 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
       serverMs,
       totalMs: Date.now() - startedAt,
     };
-    const statusMessage = buildShopInquiryStatusMessage(result.message, {
-      timings,
-      stats: data.stats,
+    const statusMessage = buildShopInquiryPublicMessage(result.message, {
       productsPerCategory,
-      categoryCount: result.categories?.length,
+      timings,
     });
-    const previewMessage = isAdminUser()
-      ? statusMessage
-      : buildShopInquiryPublicMessage(result.message);
-    const statusType = result.status === 'incomplete' ? 'warning' : 'success';
+    const previewMessage = statusMessage;
+    const statusType = result.status === 'failed' ? 'error' : 'success';
     showPreview({
       type: 'shop-inquiry',
       title: result.title,
@@ -569,14 +617,9 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
       shopPayload: {
         shopUrl: result.shopUrl,
         categories: result.categories,
-        incompleteNote: result.status === 'incomplete' ? result.message?.split('；')[0] || '' : '',
       },
     });
-    setLine(
-      shopStatus,
-      result.status === 'incomplete' ? '报告不完整' : '报告生成成功',
-      statusType,
-    );
+    setLine(shopStatus, result.status === 'failed' ? result.message || '报告生成失败' : '报告生成成功', statusType);
     state.pendingCaptchaRetry = null;
   } catch (error) {
     if (!isCaptchaPendingError(error)) {
@@ -673,12 +716,10 @@ function refreshTop20Preview() {
   if (state.preview.type !== 'top20' || !state.preview.reports?.length) {
     return;
   }
-  previewContent.innerHTML =
-    renderTop20IncompleteBanner(state.preview.incompleteNote || '') +
-    renderTop20Preview(
-      state.preview.reports,
-      state.top20SelectedCategory,
-    );
+  previewContent.innerHTML = renderTop20Preview(
+    state.preview.reports,
+    state.top20SelectedCategory,
+  );
 }
 
 function renderTop20CompanyCell(row, keyword, categoryName, { forPdf = false } = {}) {
@@ -688,7 +729,8 @@ function renderTop20CompanyCell(row, keyword, categoryName, { forPdf = false } =
     : companyLabel;
   const count = Number(row.listedProductCount) || 1;
   if (forPdf) {
-    return count > 1 ? `${nameHtml} (${count})` : nameHtml;
+    const label = count > 1 ? `${row.companyName} (${count})` : row.companyName;
+    return escapeHtml(label);
   }
   if (count <= 1 || !row.listedProducts?.length) {
     return `<span class="company-cell">${nameHtml}</span>`;
@@ -745,21 +787,11 @@ function bindListedProductsModal() {
   });
 }
 
-function renderTop20IncompleteBanner(incompleteNote = '') {
-  return incompleteNote
-    ? `<div class="incomplete-banner">⚠ ${escapeHtml(incompleteNote)}</div>`
-    : '';
-}
-
 function renderTop20Preview(reports, selectedCategory = state.top20SelectedCategory) {
   return reports
     .map((report) => {
       const category = resolveTop20Category(report, selectedCategory);
       if (!category) return '';
-      const totalHint =
-        category.totalCount > 20
-          ? `<p class="report-note">该类目共 ${category.totalCount} 个同行，导出 PDF 时仅保留前 20 名。</p>`
-          : '';
       const rows = category.rows
         .map(
           (row) => `
@@ -781,9 +813,8 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
       const summary = category.summary;
       return `
         <section class="report-section">
-          <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
-          <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。</p>
-          ${totalHint}
+          <h4>${escapeHtml(buildTop20SectionTitle(report.keyword, category.category))}</h4>
+          <p class="report-note">${REPORT_DATA_NOTE}</p>
           <table class="report-table">
             <thead>
               <tr>
@@ -816,47 +847,48 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
     .map((report) => {
       const category = resolveTop20Category(report, selectedCategory);
       if (!category) return '';
-      const exportRows = category.rows.slice(0, 20);
+      const exportRows = category.rows;
       const rows = exportRows
         .map(
           (row) => `
           <tr>
-            <td>第${row.rank}名</td>
-            <td>${renderTop20CompanyCell(row, report.keyword, category.category, { forPdf: true })}</td>
+            <td class="col-shrink">${row.rank}</td>
+            <td class="col-company">${renderTop20CompanyCell(row, report.keyword, category.category, { forPdf: true })}</td>
             <td class="col-main">${escapeHtml(row.mainProducts)}</td>
-            <td>${escapeHtml(row.pageViews)}</td>
-            <td>${escapeHtml(row.inquiries)}</td>
-            <td>${escapeHtml(row.inquiryRate)}</td>
-            <td>${escapeHtml(row.transactionNumber)}</td>
-            <td>${escapeHtml(row.transactionPrice)}</td>
-            <td>${escapeHtml(row.displayStarLevel)}</td>
-            <td>${escapeHtml(row.supplierYear)}</td>
+            <td class="col-shrink">${escapeHtml(row.pageViews)}</td>
+            <td class="col-shrink">${escapeHtml(row.inquiries)}</td>
+            <td class="col-shrink">${escapeHtml(row.inquiryRate)}</td>
+            <td class="col-shrink">${escapeHtml(row.transactionNumber)}</td>
+            <td class="col-shrink">${escapeHtml(row.transactionPrice)}</td>
+            <td class="col-shrink">${escapeHtml(row.displayStarLevel)}</td>
+            <td class="col-shrink">${escapeHtml(row.supplierYear)}</td>
           </tr>`,
         )
         .join('');
       const summary = category.summary;
       return `
         <section class="report-section">
-          <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
-          <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。PDF 仅导出当前类目前 20 名同行。</p>
-          <table class="report-table">
+          <h4>${escapeHtml(buildTop20SectionTitle(report.keyword, category.category))}</h4>
+          <p class="report-note">${REPORT_DATA_NOTE}</p>
+          <table class="report-table top20-pdf-table">
             <thead>
               <tr>
-                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>访问</th><th>询盘</th><th>询盘率</th>
-                <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th>
+                <th class="col-shrink">排名</th><th class="col-company">公司</th><th class="col-main">主营</th>
+                <th class="col-shrink">访问</th><th class="col-shrink">询盘</th><th class="col-shrink">询盘率</th>
+                <th class="col-shrink">订单量</th><th class="col-shrink">订单额</th><th class="col-shrink">星等级</th><th class="col-shrink">年限</th>
               </tr>
             </thead>
             <tbody>
               ${rows}
               <tr class="summary-row">
                 <td colspan="3">同行平均</td>
-                <td>${escapeHtml(summary.pageViews)}</td>
-                <td>${escapeHtml(summary.inquiries)}</td>
-                <td>${escapeHtml(summary.inquiryRate)}</td>
-                <td>${escapeHtml(summary.transactionNumber)}</td>
-                <td>${escapeHtml(summary.transactionPrice)}</td>
-                <td>${escapeHtml(summary.displayStarLevel)}</td>
-                <td>${escapeHtml(summary.supplierYear)}</td>
+                <td class="col-shrink">${escapeHtml(summary.pageViews)}</td>
+                <td class="col-shrink">${escapeHtml(summary.inquiries)}</td>
+                <td class="col-shrink">${escapeHtml(summary.inquiryRate)}</td>
+                <td class="col-shrink">${escapeHtml(summary.transactionNumber)}</td>
+                <td class="col-shrink">${escapeHtml(summary.transactionPrice)}</td>
+                <td class="col-shrink">${escapeHtml(summary.displayStarLevel)}</td>
+                <td class="col-shrink">${escapeHtml(summary.supplierYear)}</td>
               </tr>
             </tbody>
           </table>
@@ -866,20 +898,19 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
   return `
     <h2>${escapeHtml(reportTitle)}</h2>
     ${sections}
-    <p class="pdf-export-footer">${escapeHtml(PDF_FOOTER_TEXT)}</p>`;
+    <p class="pdf-export-footer">${escapeHtml(buildPdfFooterText('top20'))}</p>`;
 }
 
 function buildPdfExportHtml() {
   const { type, title, reports, html, shopPayload } = state.preview;
-  const footer = `<p class="pdf-export-footer">${escapeHtml(PDF_FOOTER_TEXT)}</p>`;
+  const footer = `<p class="pdf-export-footer">${escapeHtml(buildPdfFooterText(type))}</p>`;
   if (type === 'top20' && reports?.length) {
-    return `<div class="pdf-export-root">${buildTop20PdfHtml(reports, title, state.top20SelectedCategory)}</div>`;
+    return `<div class="pdf-export-root pdf-export-top20">${buildTop20PdfHtml(reports, title, state.top20SelectedCategory)}</div>`;
   }
   if (type === 'shop-inquiry' && shopPayload) {
     return `<div class="pdf-export-root"><h2>${escapeHtml(title)}</h2>${renderShopPreview(
       shopPayload.categories,
       shopPayload.shopUrl,
-      shopPayload.incompleteNote || '',
     )}${footer}</div>`;
   }
   if (html) {
@@ -914,6 +945,7 @@ async function apiFetch(url, options = {}) {
 function showLogin() {
   loginView.classList.remove('hidden');
   appView.classList.add('hidden');
+  showLoginPanel();
 }
 
 function showApp() {
@@ -922,6 +954,7 @@ function showApp() {
   sidebarUser.innerHTML = `
     <div>${escapeHtml(state.user.username)}</div>
     <div>${escapeHtml(state.user.roleLabel || state.user.role)}</div>`;
+  configureSidebarNav();
 }
 
 async function bootstrapAuth() {
@@ -940,6 +973,29 @@ async function bootstrapAuth() {
     showLogin();
   }
 }
+
+function showLoginPanel() {
+  loginForm.classList.remove('hidden');
+  registerForm.classList.add('hidden');
+  showRegisterBtn.classList.remove('hidden');
+  showLoginBtn.classList.add('hidden');
+  loginError.textContent = '';
+  registerError.textContent = '';
+  registerSuccess.classList.add('hidden');
+}
+
+function showRegisterPanel() {
+  loginForm.classList.add('hidden');
+  registerForm.classList.remove('hidden');
+  showRegisterBtn.classList.add('hidden');
+  showLoginBtn.classList.remove('hidden');
+  loginError.textContent = '';
+  registerError.textContent = '';
+  registerSuccess.classList.add('hidden');
+}
+
+showRegisterBtn?.addEventListener('click', showRegisterPanel);
+showLoginBtn?.addEventListener('click', showLoginPanel);
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -967,6 +1023,36 @@ loginForm.addEventListener('submit', async (event) => {
   }
 });
 
+registerForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  registerError.textContent = '';
+  registerSuccess.classList.add('hidden');
+  try {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inviteCode: document.getElementById('registerInviteCode').value.trim(),
+        username: document.getElementById('registerUsername').value.trim(),
+        password: document.getElementById('registerPassword').value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || '注册失败');
+    }
+    state.token = data.token;
+    state.user = data.user;
+    localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    registerForm.reset();
+    showLoginPanel();
+    showApp();
+    initAppAfterLogin();
+  } catch (error) {
+    registerError.textContent = error.message || '注册失败';
+  }
+});
+
 logoutBtn.addEventListener('click', async () => {
   try {
     await fetch('/api/auth/logout', {
@@ -982,16 +1068,27 @@ logoutBtn.addEventListener('click', async () => {
   showLogin();
 });
 
+function configureSidebarNav() {
+  performanceNavItem?.classList.toggle('hidden', !isAdminUser());
+  if (!isAdminUser() && state.view === 'performance') {
+    switchView('report');
+  }
+}
+
 function switchView(view) {
+  if (view === 'performance' && !isAdminUser()) {
+    return;
+  }
   state.view = view;
   document.querySelectorAll('.nav-item').forEach((node) => {
     node.classList.toggle('active', node.dataset.view === view);
   });
   document.querySelectorAll('.view').forEach((node) => node.classList.remove('active'));
   document.getElementById(`${view}View`).classList.add('active');
-  const titles = { report: '报告', cache: '缓存', accounts: '账号' };
+  const titles = { report: '报告', cache: '缓存', performance: '性能', accounts: '账号' };
   viewTitle.textContent = titles[view] || '报告';
   if (view === 'cache') loadCacheList();
+  if (view === 'performance') loadPerformanceList();
   if (view === 'accounts') loadAccounts();
 }
 
@@ -1449,29 +1546,20 @@ function formatDuration(ms) {
   return `${(value / 1000).toFixed(1)}s`;
 }
 
-function formatShopInquiryTimingSummary(timings) {
-  if (!timings) return '';
-  const timingBits = [];
-  if (timings.samplingMs) timingBits.push(`采样 ${formatDuration(timings.samplingMs)}`);
-  if (timings.compareMs) {
-    const batchHint = timings.compareBatches ? `（${timings.compareBatches} 批）` : '';
-    timingBits.push(`compare ${formatDuration(timings.compareMs)}${batchHint}`);
-  }
-  if (timings.detailMs) timingBits.push(`详情 ${formatDuration(timings.detailMs)}`);
-  if (timings.totalMs) timingBits.push(`总计 ${formatDuration(timings.totalMs)}`);
-  return timingBits.length ? `，耗时 ${timingBits.join(' / ')}` : '';
-}
-
 function extractShopInquiryPrefix(serverMessage) {
   if (!serverMessage) return '';
-  const headline = '已生成指定同行询盘分布';
-  const idx = serverMessage.indexOf(headline);
+  const headlineMatch = serverMessage.match(/已生成指定同行询盘分布（参数\d+，总耗时[^）]+）/);
+  if (!headlineMatch) return '';
+  const idx = serverMessage.indexOf(headlineMatch[0]);
   if (idx <= 0) return '';
   return serverMessage.slice(0, idx).replace(/[；;]\s*$/, '').trim();
 }
 
-function buildShopInquiryPublicMessage(prefixNotes) {
-  let message = '已生成指定同行询盘分布';
+function buildShopInquiryPublicMessage(prefixNotes, { productsPerCategory, timings } = {}) {
+  const param =
+    productsPerCategory ?? timings?.productsPerCategory ?? getShopProductsPerCategory();
+  const total = timings?.totalMs ? formatDuration(timings.totalMs) : '-';
+  let message = `已生成指定同行询盘分布（参数${param}，总耗时${total}）`;
   const prefix = extractShopInquiryPrefix(prefixNotes) || String(prefixNotes || '').trim();
   if (prefix && !prefix.includes('已生成指定同行询盘分布')) {
     message = `${prefix}；${message}`;
@@ -1479,66 +1567,12 @@ function buildShopInquiryPublicMessage(prefixNotes) {
   return message;
 }
 
-function buildTop20PreviewMeta(result, searchPageCount, timings) {
-  if (!isAdminUser()) {
-    return result.message || '报告已生成';
-  }
-  const timingSummary = formatTop20TimingsSummary(timings);
-  return timingSummary
-    ? `${result.message} · 抓取 ${searchPageCount} 页 · ${timingSummary}`
-    : `${result.message} · 抓取 ${searchPageCount} 页`;
+function buildTop20PreviewMeta(result) {
+  return result.message || '报告已生成';
 }
 
-function buildCachePreviewMeta({ createdAt, createdBy, timingSummary, incomplete = false }) {
-  if (!isAdminUser()) {
-    const base = incomplete ? '缓存报告（不完整）' : '缓存报告';
-    return createdAt ? `${base} · ${formatTime(createdAt)}` : base;
-  }
-  let meta = `缓存报告 · ${formatTime(createdAt)} · ${createdBy}`;
-  if (incomplete) {
-    meta += ' · 不完整';
-  }
-  if (timingSummary) {
-    meta += ` · ${timingSummary}`;
-  }
-  return meta;
-}
-
-function buildShopInquiryStatusMessage(prefixNotes, { timings, stats, productsPerCategory, categoryCount } = {}) {
-  const platformCount =
-    categoryCount ?? timings?.platformLeafCategories ?? stats?.platformLeafCategories;
-  const groupCount = timings?.samplingGroupCount ?? stats?.samplingGroupCount;
-  const sampledTotal = timings?.sampledProductIdTotal ?? stats?.sampledProductIdTotal;
-  const uniqueProducts = timings?.uniqueProducts ?? stats?.uniqueProducts;
-  const perGroup =
-    productsPerCategory ?? stats?.productsPerCategory ?? timings?.productsPerCategory ?? 2;
-
-  const detailParts = [];
-  if (platformCount != null) detailParts.push(`${platformCount}个类目`);
-  if (perGroup) detailParts.push(`每分组${perGroup}个产品id`);
-  if (groupCount && sampledTotal) {
-    const dedup =
-      uniqueProducts && uniqueProducts !== sampledTotal ? `（去重${uniqueProducts}个）` : '';
-    detailParts.push(`${groupCount}个分组共${sampledTotal}个产品id${dedup}`);
-  } else if (groupCount) {
-    detailParts.push(`${groupCount}个分组`);
-  } else if (sampledTotal) {
-    const dedup =
-      uniqueProducts && uniqueProducts !== sampledTotal ? `（去重${uniqueProducts}个）` : '';
-    detailParts.push(`共${sampledTotal}个产品id${dedup}`);
-  }
-
-  let message = '已生成指定同行询盘分布';
-  if (detailParts.length) {
-    message += `（${detailParts.join('，')}）`;
-  }
-  message += formatShopInquiryTimingSummary(timings);
-
-  const prefix = extractShopInquiryPrefix(prefixNotes) || String(prefixNotes || '').trim();
-  if (prefix && !prefix.includes('已生成指定同行询盘分布')) {
-    message = `${prefix}；${message}`;
-  }
-  return message;
+function buildCachePreviewMeta({ createdAt, createdBy }) {
+  return createdAt ? `缓存报告 · ${formatTime(createdAt)} · ${createdBy}` : '缓存报告';
 }
 
 function formatTop20TimingsSummary(timings) {
@@ -1618,12 +1652,9 @@ async function fetchShopInquiryData(shopUrl, { productsPerCategory = DEFAULT_SHO
   return response.data;
 }
 
-function renderShopPreview(categories, shopUrl, incompleteNote = '') {
-  const incompleteBanner = incompleteNote
-    ? `<div class="incomplete-banner">⚠ ${escapeHtml(incompleteNote)}</div>`
-    : '';
+function renderShopPreview(categories, shopUrl) {
   if (window.ShopTreeClient) {
-    return incompleteBanner + window.ShopTreeClient.renderPreview({ shopUrl, categories });
+    return window.ShopTreeClient.renderPreview({ shopUrl, categories });
   }
   const rows = (categories || [])
     .map(
@@ -1652,28 +1683,21 @@ function bindPreviewTree() {
   }
 }
 
-function showPreview({ type, title, message, html, reports, rawData, shopPayload, incompleteNote = '' }) {
+function showPreview({ type, title, message, html, reports, rawData, shopPayload }) {
   hideReportGenerating(false);
-  state.preview = { type, title, html, reports, rawData, shopPayload, incompleteNote };
+  state.preview = { type, title, html, reports, rawData, shopPayload };
   previewTitle.textContent = title;
   previewMeta.textContent = message;
   previewEmpty.classList.add('hidden');
   previewContent.classList.remove('hidden');
   previewActions.classList.remove('hidden');
-  downloadExcelBtn.classList.toggle('hidden', type !== 'top20');
   top20CategoryFilterWrap?.classList.toggle('hidden', type !== 'top20');
   if (type === 'shop-inquiry' && shopPayload) {
-    previewContent.innerHTML = renderShopPreview(
-      shopPayload.categories,
-      shopPayload.shopUrl,
-      shopPayload.incompleteNote || '',
-    );
+    previewContent.innerHTML = renderShopPreview(shopPayload.categories, shopPayload.shopUrl);
     bindPreviewTree();
   } else if (type === 'top20' && reports?.length) {
     populateTop20CategoryFilter(reports);
-    previewContent.innerHTML =
-      renderTop20IncompleteBanner(incompleteNote) +
-      renderTop20Preview(reports, state.top20SelectedCategory);
+    previewContent.innerHTML = renderTop20Preview(reports, state.top20SelectedCategory);
   } else if (html) {
     previewContent.innerHTML = html;
   }
@@ -1710,6 +1734,8 @@ async function runTop20Report() {
     updateReportGenerating('正在汇总并渲染报告...');
     setLine(top20Status, '正在生成报告...');
     const serverStartedAt = Date.now();
+    const firstResult = rawData.sameIndustryAnalyseList?.[0];
+    const scrapeStats = firstResult?.scrapingStats || rawData.timings || null;
     const result = await apiFetch('/api/reports/top20', {
       method: 'POST',
       body: JSON.stringify({
@@ -1722,31 +1748,20 @@ async function runTop20Report() {
         pluginMs,
         serverMs: 0,
         timings: rawData.timings || null,
-        scrapeStats: rawData.timings || null,
-        isComplete: rawData.timings?.isComplete ?? true,
+        scrapeStats,
+        isComplete: scrapeStats?.isComplete ?? rawData.timings?.isComplete ?? true,
       }),
     });
     const serverMs = Date.now() - serverStartedAt;
-    const timings = result.timings || {
-      ...(rawData.timings || {}),
-      pluginMs,
-      serverMs,
-      totalMs: Date.now() - startedAt,
-    };
-    const timingSummary = formatTop20TimingsSummary(timings);
-    const statusType = result.status === 'incomplete' ? 'warning' : 'success';
-    const incompleteNote =
-      result.status === 'incomplete' ? result.message?.split('；')[0] || '' : '';
     showPreview({
       type: 'top20',
       title: result.title,
-      message: buildTop20PreviewMeta(result, searchPageCount, timings),
+      message: buildTop20PreviewMeta(result),
       html: result.html,
       reports: result.reports,
       rawData,
-      incompleteNote,
     });
-    setLine(top20Status, result.status === 'incomplete' ? '报告不完整' : '报告生成成功', statusType);
+    setLine(top20Status, '报告生成成功', 'success');
     state.pendingCaptchaRetry = null;
   } catch (error) {
     if (!isCaptchaPendingError(error)) {
@@ -1810,31 +1825,6 @@ downloadHtmlBtn.addEventListener('click', async () => {
   }
 });
 
-downloadExcelBtn.addEventListener('click', async () => {
-  if (!state.preview.rawData) return;
-  try {
-    const response = await fetch('/api/reports/export/excel', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({
-        keywordText: top20Keywords.value,
-        keywords: parseKeywords(top20Keywords.value),
-        rawData: state.preview.rawData,
-      }),
-    });
-    if (!response.ok) throw new Error('下载失败');
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${state.preview.title || 'report'}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    alert(error.message || '下载失败');
-  }
-});
-
 exportPdfBtn.addEventListener('click', async () => {
   if (!state.preview.type) return;
   if (typeof html2pdf === 'undefined') {
@@ -1850,8 +1840,11 @@ exportPdfBtn.addEventListener('click', async () => {
   exportPdfBtn.disabled = true;
   const prevText = exportPdfBtn.textContent;
   exportPdfBtn.textContent = '导出中...';
+  const isTop20Pdf = state.preview.type === 'top20';
   const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;width:1100px;';
+  wrapper.style.cssText = isTop20Pdf
+    ? 'position:fixed;left:-10000px;top:0;width:1060px;'
+    : 'position:fixed;left:-10000px;top:0;width:794px;';
   wrapper.innerHTML = exportHtml;
   document.body.appendChild(wrapper);
   const element = wrapper.firstElementChild || wrapper;
@@ -1866,7 +1859,7 @@ exportPdfBtn.addEventListener('click', async () => {
         jsPDF: {
           unit: 'mm',
           format: 'a4',
-          orientation: state.preview.type === 'top20' ? 'landscape' : 'portrait',
+          orientation: isTop20Pdf ? 'landscape' : 'portrait',
         },
         pagebreak: { mode: ['css', 'legacy'] },
       })
@@ -1898,7 +1891,246 @@ function formatCacheStatus(status) {
   return '<span class="tag failed">失败</span>';
 }
 
-const CACHE_TABLE_COLSPAN = 9;
+function formatPerformanceStatusTag(status) {
+  return formatCacheStatus(status);
+}
+
+function appendTimingMetric(lines, label, value, formatter = formatDuration) {
+  if (value === undefined || value === null || value === '') {
+    return;
+  }
+  if (typeof formatter === 'function') {
+    const formatted = formatter(value);
+    if (formatted !== undefined && formatted !== null && formatted !== '') {
+      lines.push(`${label}：${formatted}`);
+    }
+    return;
+  }
+  lines.push(`${label}：${value}`);
+}
+
+function formatFailureStatsLines(failureStats) {
+  if (!failureStats) {
+    return [];
+  }
+  const compareLabels = {
+    timeout: 'Compare超时',
+    emptyList: 'Compare空数据',
+    structureChange: 'Compare页面结构变化',
+    httpError: 'Compare HTTP错误',
+    apiError: 'Compare接口异常',
+    captcha: 'Compare验证码',
+    other: 'Compare其他',
+  };
+  const detailLabels = {
+    timeout: '类目解析超时',
+    loginBlock: '类目解析登录/拦截',
+    categoryNotFound: '类目未找到',
+    noDetailUrl: '缺少详情URL',
+    httpError: '类目解析HTTP错误',
+    captcha: '类目解析验证码',
+    other: '类目解析其他',
+  };
+  const lines = [];
+  for (const [key, count] of Object.entries(failureStats.compare || {})) {
+    if (count > 0) {
+      lines.push(`${compareLabels[key] || key}：${count}`);
+    }
+  }
+  for (const [key, count] of Object.entries(failureStats.detail || {})) {
+    if (count > 0) {
+      lines.push(`${detailLabels[key] || key}：${count}`);
+    }
+  }
+  return lines;
+}
+
+function formatDiagnosticsLines(diagnostics) {
+  if (!diagnostics) {
+    return [];
+  }
+  const lines = [];
+  if (diagnostics.compareFailure) {
+    const sample = diagnostics.compareFailure;
+    lines.push(
+      `Compare失败样本：${sample.reason || '-'}（${sample.message || '无消息'}，${sample.productIds?.length || 0} 个产品）`,
+    );
+  }
+  if (diagnostics.detailPage) {
+    const sample = diagnostics.detailPage;
+    lines.push(
+      `类目失败样本：${sample.reason || '-'}（${sample.url || '-'}，HTML ${sample.htmlLength || 0} 字节）`,
+    );
+  }
+  if (diagnostics.compareProducts?.listViewCount != null) {
+    lines.push(`Compare成功样本：listView ${diagnostics.compareProducts.listViewCount} 条`);
+  }
+  return lines;
+}
+
+function buildPerformanceTimingLines(item) {
+  const timings = item.payload?.timings || {};
+  const stats = item.payload?.scrapeStats || {};
+  const failureStats = stats.failureStats || timings.failureStats || null;
+  const diagnostics = stats.diagnostics || timings.diagnostics || null;
+  const lines = [];
+
+  appendTimingMetric(lines, '记录总耗时', item.durationMs || timings.totalMs);
+  appendTimingMetric(lines, '插件耗时', timings.pluginMs);
+  appendTimingMetric(lines, '服务端耗时', timings.serverMs ?? timings.serverRenderMs);
+  appendTimingMetric(lines, '服务端渲染', timings.serverRenderMs);
+
+  if (item.type === 'top20') {
+    appendTimingMetric(lines, '搜索耗时', timings.searchMs);
+    appendTimingMetric(lines, '搜索页数', timings.searchPages, (v) => v);
+    appendTimingMetric(lines, '关键词数', timings.keywordCount, (v) => v);
+    appendTimingMetric(lines, 'compare 耗时', timings.compareMs);
+    appendTimingMetric(lines, 'compare 批次数', timings.compareBatches, (v) => v);
+    appendTimingMetric(lines, 'compare 失败批', timings.compareBatchFailures, (v) => v);
+    appendTimingMetric(lines, '类目解析耗时', timings.detailMs);
+    appendTimingMetric(
+      lines,
+      '类目解析成功',
+      timings.detailSuccess != null ? `${timings.detailSuccess}/${timings.detailCandidates || 0}` : '',
+      (v) => v,
+    );
+    appendTimingMetric(lines, '类目解析失败', timings.detailFailed, (v) => v);
+    appendTimingMetric(lines, '类目解析重试轮', timings.detailRetryRounds, (v) => v);
+    appendTimingMetric(lines, '整理数据耗时', timings.rankMs);
+    appendTimingMetric(lines, '去重后产品数', timings.uniqueProducts, (v) => v);
+    appendTimingMetric(lines, '去重后供应商数', timings.uniqueSuppliers, (v) => v);
+    appendTimingMetric(lines, '询盘阈值', timings.inquiryThreshold, (v) => v);
+    appendTimingMetric(lines, '高询盘产品数', timings.highInquiryProductCount, (v) => v);
+    appendTimingMetric(lines, '抓取参数(页)', item.payload?.searchPageCount, (v) => v);
+    formatFailureStatsLines(failureStats).forEach((line) => lines.push(line));
+    formatDiagnosticsLines(diagnostics).forEach((line) => lines.push(line));
+  } else if (item.type === 'shop-inquiry') {
+    appendTimingMetric(lines, 'Profile 页耗时', timings.profilePageMs);
+    appendTimingMetric(lines, '采样耗时', timings.samplingMs);
+    appendTimingMetric(lines, 'compare 耗时', timings.compareMs);
+    appendTimingMetric(lines, 'compare 批次数', timings.compareBatches, (v) => v);
+    appendTimingMetric(lines, 'compare 失败批', timings.compareBatchFailures, (v) => v);
+    appendTimingMetric(lines, '详情解析耗时', timings.detailMs);
+    appendTimingMetric(lines, '合并耗时', timings.mergeMs);
+    appendTimingMetric(lines, '采样分组数', timings.samplingGroupCount ?? stats.samplingGroupCount, (v) => v);
+    appendTimingMetric(
+      lines,
+      '采样产品 ID 数',
+      timings.sampledProductIdTotal ?? stats.sampledProductIdTotal,
+      (v) => v,
+    );
+    appendTimingMetric(lines, '去重产品数', timings.uniqueProducts ?? stats.uniqueProducts, (v) => v);
+    appendTimingMetric(
+      lines,
+      '高询盘样本数',
+      timings.compareCandidates ?? stats.compareCandidates,
+      (v) => v,
+    );
+    appendTimingMetric(
+      lines,
+      '平台叶子类目数',
+      timings.platformLeafCategories ?? stats.platformLeafCategories,
+      (v) => v,
+    );
+    appendTimingMetric(
+      lines,
+      '抓取参数(每分组)',
+      item.payload?.productsPerCategory ?? timings.productsPerCategory,
+      (v) => v,
+    );
+    appendTimingMetric(lines, 'Profile 分组数', stats.profileCategoryCount, (v) => v);
+    appendTimingMetric(lines, 'Profile 分组请求', stats.profileCategoryFetches, (v) => v);
+    appendTimingMetric(lines, '详情重试轮', stats.detailRetryRounds ?? timings.detailRetryRounds, (v) => v);
+  }
+
+  if (item.payload?.isComplete === false || timings.isComplete === false) {
+    lines.push('数据完整：否');
+  }
+  if (item.errorMessage) {
+    lines.push(`异常/备注：${item.errorMessage}`);
+  }
+  if (!lines.length) {
+    lines.push('暂无明细耗时数据');
+  }
+  return lines;
+}
+
+function renderPerformanceTableBody(items) {
+  if (!items.length) {
+    performanceTableBody.innerHTML =
+      '<tr><td colspan="7" class="empty-cell">暂无性能数据</td></tr>';
+    return;
+  }
+
+  performanceTableBody.innerHTML = items
+    .flatMap((item) => {
+      const expanded = state.performanceExpandedIds.has(item.id);
+      const detailLines = buildPerformanceTimingLines(item);
+      const rows = [
+        `<tr class="performance-row" data-performance-id="${escapeHtml(item.id)}">
+          <td class="perf-expand-col">
+            <button type="button" class="performance-toggle" data-performance-id="${escapeHtml(item.id)}" aria-expanded="${expanded ? 'true' : 'false'}">${expanded ? '−' : '+'}</button>
+          </td>
+          <td class="object-cell">${escapeHtml(item.targetObject || '-')}</td>
+          <td>${escapeHtml(item.typeLabel || item.type || '-')}</td>
+          <td>${escapeHtml(item.createdBy || '-')}</td>
+          <td>${escapeHtml(formatTime(item.createdAt))}</td>
+          <td>${formatPerformanceStatusTag(item.status)}</td>
+          <td>${escapeHtml(formatDuration(item.durationMs))}</td>
+        </tr>`,
+      ];
+      if (expanded) {
+        rows.push(`
+          <tr class="performance-detail-row">
+            <td colspan="7">
+              <div class="performance-detail">
+                <div class="performance-detail-title">${escapeHtml(item.title || '报告明细耗时')}</div>
+                <ul class="performance-detail-list">
+                  ${detailLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+                </ul>
+              </div>
+            </td>
+          </tr>`);
+      }
+      return rows;
+    })
+    .join('');
+}
+
+async function loadPerformanceList() {
+  if (!isAdminUser()) {
+    return;
+  }
+  performanceTableBody.innerHTML =
+    '<tr><td colspan="7" class="empty-cell">加载中...</td></tr>';
+  try {
+    const data = await apiFetch('/api/performance');
+    state.performanceItems = data.items || [];
+    renderPerformanceTableBody(state.performanceItems);
+  } catch (error) {
+    performanceTableBody.innerHTML = `<tr><td colspan="7" class="empty-cell">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+performanceTableBody?.addEventListener('click', (event) => {
+  const toggle = event.target.closest('.performance-toggle');
+  if (!toggle?.dataset.performanceId) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const { performanceId } = toggle.dataset;
+  if (state.performanceExpandedIds.has(performanceId)) {
+    state.performanceExpandedIds.delete(performanceId);
+  } else {
+    state.performanceExpandedIds.add(performanceId);
+  }
+  renderPerformanceTableBody(state.performanceItems);
+});
+
+refreshPerformanceBtn?.addEventListener('click', loadPerformanceList);
+
+const CACHE_TABLE_COLSPAN = 8;
 
 function normalizeCacheObjectKey(value) {
   return String(value || '')
@@ -2006,7 +2238,6 @@ function renderCacheItemRow(item, { grouped = false } = {}) {
       <td>${escapeHtml(item.pluginVersion || '-')}</td>
       <td>${escapeHtml(item.inquirySummary || '-')}</td>
       <td>${escapeHtml(item.reportParams || '-')}</td>
-      <td>${formatCacheStatus(item.status)}</td>
       <td>${escapeHtml(formatDuration(item.durationMs))}</td>
     </tr>`;
 }
@@ -2107,44 +2338,29 @@ cacheTableBody.addEventListener('click', async (event) => {
     const item = data.item;
     switchView('report');
     if (item.type === 'shop-inquiry') {
-      const statusSummary = buildShopInquiryStatusMessage(
-        item.status === 'incomplete' ? item.errorMessage : '',
-        {
-          timings: item.payload?.timings,
-          stats: item.payload?.scrapeStats,
-          productsPerCategory: item.payload?.productsPerCategory,
-          categoryCount: item.payload?.categories?.length,
-        },
-      );
-      const cacheMeta = buildCachePreviewMeta({
-        createdAt: item.createdAt,
-        createdBy: item.createdBy,
-        incomplete: item.status === 'incomplete',
-      });
       showPreview({
         type: 'shop-inquiry',
         title: item.title,
-        message: isAdminUser() && statusSummary ? `${cacheMeta} · ${statusSummary}` : cacheMeta,
+        message: buildCachePreviewMeta({
+          createdAt: item.createdAt,
+          createdBy: item.createdBy,
+        }),
         html: item.html,
         shopPayload: {
           shopUrl: item.payload?.shopUrl,
           categories: item.payload?.categories,
-          incompleteNote: item.status === 'incomplete' ? item.errorMessage || '' : '',
         },
       });
     } else {
-      const timingSummary = formatTop20TimingsSummary(item.payload?.timings);
       showPreview({
         type: 'top20',
         title: item.title,
         message: buildCachePreviewMeta({
           createdAt: item.createdAt,
           createdBy: item.createdBy,
-          timingSummary,
         }),
         html: item.html,
         reports: item.reports,
-        incompleteNote: item.status === 'incomplete' ? item.errorMessage || '' : '',
       });
     }
   } catch (error) {
@@ -2158,26 +2374,58 @@ function isAdminUser() {
   return state.user?.role === 'admin';
 }
 
-function configureAccountFormAccess({ editing = false } = {}) {
+function isEmployeeUser() {
+  return state.user?.role === 'employee';
+}
+
+function canCreateAccount() {
+  return isAdminUser() || isEmployeeUser();
+}
+
+function configureAccountFormAccess({ editing = false, creating = false } = {}) {
   const isAdmin = isAdminUser();
-  accountFormCard.classList.toggle('hidden', !isAdmin && !editing);
-  createAccountBtn?.classList.toggle('hidden', !isAdmin);
-  accountFormTitle.textContent = isAdmin && !accountEditId.value ? '新建账号' : '编辑账号';
-  accountFormDesc.textContent = isAdmin
-    ? '管理员可创建经理 / 员工账号，并指定上级人员'
-    : '可修改密码与上级人员，无法修改账号类型或新建账号';
+  const isEmployee = isEmployeeUser();
+  const isCreating = creating || (!accountEditId.value && state.accountCreateMode);
+  accountFormCard.classList.toggle('hidden', !isAdmin && !editing && !isCreating);
+  createAccountBtn?.classList.toggle('hidden', !canCreateAccount());
+  if (isAdmin && isCreating) {
+    accountFormTitle.textContent = '新建账号';
+    accountFormDesc.textContent = '管理员可创建经理 / 员工账号，并指定上级人员';
+  } else if (isEmployee && isCreating) {
+    accountFormTitle.textContent = '新建账号';
+    accountFormDesc.textContent = '可新建员工账号，上级固定为本人，无法修改账号类型与上级';
+  } else if (editing) {
+    accountFormTitle.textContent = '编辑账号';
+    accountFormDesc.textContent = isAdmin
+      ? '可修改用户名、账号类型、上级与密码'
+      : '仅可修改密码，无法修改账号类型与上级人员';
+  } else {
+    accountFormTitle.textContent = '编辑账号';
+    accountFormDesc.textContent = isAdmin
+      ? '管理员可创建经理 / 员工账号，并指定上级人员'
+      : '仅可修改密码，无法修改账号类型与上级人员';
+  }
   accountsListDesc.textContent = isAdmin
     ? '支持增删改查，列表包含 admin 管理员账号'
-    : '仅显示本人及下级账号，点击编辑可修改密码与上级人员';
+    : isEmployee
+      ? '显示本人及下级账号，可新建员工账号或修改下级密码'
+      : '仅显示本人及下级账号，点击编辑可修改密码';
   accountUsername.disabled = Boolean(accountEditId.value) && !isAdmin;
   accountRole.disabled = !isAdmin;
-  resetAccountFormBtn.classList.toggle('hidden', !isAdmin);
+  accountParentId.disabled = !isAdmin;
+  accountInviteCodeWrap?.classList.toggle('hidden', !isAdmin);
+  document.querySelectorAll('.admin-only-col').forEach((node) => {
+    node.classList.toggle('hidden', !isAdmin);
+  });
+  resetAccountFormBtn.classList.toggle('hidden', !isAdmin && !isEmployee);
 }
 
 function resetAccountForm() {
   accountEditId.value = '';
   accountForm.reset();
+  accountInviteCode.value = '';
   accountFormError.textContent = '';
+  state.accountCreateMode = false;
   configureAccountFormAccess({ editing: false });
 }
 
@@ -2210,7 +2458,7 @@ async function loadParentOptions(targetUserId, selectedId = '') {
 async function loadAccounts() {
   const isAdmin = isAdminUser();
   configureAccountFormAccess({ editing: false });
-  accountsTableBody.innerHTML = '<tr><td colspan="4" class="empty-cell">加载中...</td></tr>';
+  accountsTableBody.innerHTML = '<tr><td colspan="5" class="empty-cell">加载中...</td></tr>';
   try {
     const data = await apiFetch('/api/users');
     state.users = data.users || [];
@@ -2221,7 +2469,7 @@ async function loadAccounts() {
       return a.username.localeCompare(b.username, 'zh-CN');
     });
     if (!sortedUsers.length) {
-      accountsTableBody.innerHTML = '<tr><td colspan="4" class="empty-cell">暂无可见账号</td></tr>';
+      accountsTableBody.innerHTML = '<tr><td colspan="5" class="empty-cell">暂无可见账号</td></tr>';
       return;
     }
     accountsTableBody.innerHTML = sortedUsers
@@ -2230,11 +2478,15 @@ async function loadAccounts() {
         const canDelete = isAdmin && user.username !== 'admin';
         const adminBadge =
           user.username === 'admin' ? ' <span class="badge">系统账号</span>' : '';
+        const inviteCell = isAdmin
+          ? `<td class="admin-only-col">${escapeHtml(user.inviteCode || '-')}</td>`
+          : '';
         return `
           <tr>
             <td>${escapeHtml(user.username)}${adminBadge}</td>
             <td>${escapeHtml(user.roleLabel)}</td>
             <td>${escapeHtml(parent?.username || '-')}</td>
+            ${inviteCell}
             <td>
               <button type="button" class="btn ghost edit-user-btn" data-id="${escapeHtml(user.id)}">编辑</button>
               ${canDelete ? `<button type="button" class="btn danger delete-user-btn" data-id="${escapeHtml(user.id)}">删除</button>` : ''}
@@ -2243,7 +2495,7 @@ async function loadAccounts() {
       })
       .join('');
   } catch (error) {
-    accountsTableBody.innerHTML = `<tr><td colspan="4" class="empty-cell">${escapeHtml(error.message)}</td></tr>`;
+    accountsTableBody.innerHTML = `<tr><td colspan="5" class="empty-cell">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -2257,6 +2509,7 @@ accountsTableBody.addEventListener('click', async (event) => {
     accountUsername.value = user.username;
     accountPassword.value = '';
     accountRole.value = user.role;
+    accountInviteCode.value = user.inviteCode || '';
     await loadParentOptions(user.id, user.parentId || '');
     configureAccountFormAccess({ editing: true });
     return;
@@ -2277,9 +2530,7 @@ accountForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   accountFormError.textContent = '';
   const isAdmin = isAdminUser();
-  const payload = {
-    parentId: accountParentId.value || null,
-  };
+  const payload = {};
   if (accountPassword.value.trim()) {
     payload.password = accountPassword.value.trim();
   }
@@ -2288,24 +2539,30 @@ accountForm.addEventListener('submit', async (event) => {
       if (isAdmin) {
         payload.username = accountUsername.value.trim();
         payload.role = accountRole.value;
+        payload.parentId = accountParentId.value || null;
+        payload.inviteCode = accountInviteCode.value.trim();
       }
       await apiFetch(`/api/users/${accountEditId.value}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
     } else {
-      if (!isAdmin) {
+      if (!canCreateAccount()) {
         throw new Error('无权创建账号');
       }
       if (!payload.password) throw new Error('新建账号必须填写密码');
+      const createBody = {
+        username: accountUsername.value.trim(),
+        password: payload.password,
+      };
+      if (isAdmin) {
+        createBody.role = accountRole.value;
+        createBody.parentId = accountParentId.value || null;
+        createBody.inviteCode = accountInviteCode.value.trim();
+      }
       await apiFetch('/api/users', {
         method: 'POST',
-        body: JSON.stringify({
-          username: accountUsername.value.trim(),
-          role: accountRole.value,
-          parentId: payload.parentId,
-          password: payload.password,
-        }),
+        body: JSON.stringify(createBody),
       });
     }
     resetAccountForm();
@@ -2319,6 +2576,15 @@ resetAccountFormBtn.addEventListener('click', resetAccountForm);
 refreshAccountsBtn.addEventListener('click', loadAccounts);
 createAccountBtn?.addEventListener('click', () => {
   resetAccountForm();
+  state.accountCreateMode = true;
+  if (isEmployeeUser()) {
+    accountRole.value = 'employee';
+    if (state.user?.id) {
+      fillParentOptions(state.users, state.user.id);
+      accountParentId.value = state.user.id;
+    }
+  }
+  configureAccountFormAccess({ creating: true });
   accountFormCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   accountUsername?.focus();
 });

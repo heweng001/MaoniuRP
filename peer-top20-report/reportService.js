@@ -1,17 +1,33 @@
 import { assertReportHasRows, processSameIndustryData } from './dataProcessor.js';
-import { exportExcelToBuffer } from './reportExcel.js';
 import { generateHtmlReport } from './reportHtml.js';
+
+export function sanitizeKeywordLabel(text) {
+  return String(text || 'report')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .trim()
+    .slice(0, 120);
+}
+
+export function buildKeywordLabel(reports) {
+  if (!reports?.length) {
+    return 'report';
+  }
+  if (reports.length === 1) {
+    return sanitizeKeywordLabel(reports[0].keyword);
+  }
+  return sanitizeKeywordLabel(reports.map((report) => report.keyword).join('、'));
+}
 
 export function buildReportTitle(keywordLabel) {
   const dateStr = new Date().toISOString().slice(0, 10);
-  return `${keywordLabel}-询盘top20店铺明细表-${dateStr}`;
+  return `${keywordLabel}-top同行询盘榜-${dateStr}`;
 }
 
 export function buildReportPayload(rawData, { selectedCategory } = {}) {
   const reports = processSameIndustryData(rawData);
   assertReportHasRows(reports);
 
-  const keywordLabel = reports.length === 1 ? reports[0].keyword : 'multi-keywords';
+  const keywordLabel = buildKeywordLabel(reports);
   const title = buildReportTitle(keywordLabel);
 
   return {
@@ -29,9 +45,7 @@ export function buildReportPayload(rawData, { selectedCategory } = {}) {
 }
 
 export async function createReportFromRawData(rawData, options = {}) {
-  const payload = buildReportPayload(rawData, options);
-  const excelBuffer = await exportExcelToBuffer(payload.reports, options);
-  return { ...payload, excelBuffer };
+  return buildReportPayload(rawData, options);
 }
 
 export async function createReportFromInput(input, options = {}) {

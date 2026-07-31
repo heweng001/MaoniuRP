@@ -78,11 +78,9 @@ export function generateHtmlReport(reports, { title, selectedCategory } = {}) {
 
       return `
         <section class="report-section">
-          <h2>${category.category} 类目询盘同行 top 排行榜</h2>
+          <h2>关键词${report.keyword}对应的叶子类目「${category.category}」按近6个月询盘数据排名如下：</h2>
           <p class="note">
-            关键词：<strong>${report.keyword}</strong>；
-            访客、询盘为该店铺在 <strong>${category.category}</strong> 类目下近 6 个月数据。
-            线上订单量及金额为全店近 6 个月数据。
+            报告中的访客，询盘，订单量，订单额均为最近6个月的汇总数据，订单额单位为usd。
           </p>
           ${renderTable(category)}
         </section>`;

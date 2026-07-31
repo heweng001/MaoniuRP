@@ -2,6 +2,7 @@ import {
   buildCategoryTree,
   computeShopInquirySummary,
   formatAggregateInquiry,
+  formatInquiryRate,
 } from './shopInquiryTree.js';
 
 function escapeHtml(text) {
@@ -21,12 +22,24 @@ function renderTreeRows(node, parentKey = 'root', rows = []) {
       child.isLeaf && !hasChildren
         ? child.leafInquiry
         : formatAggregateInquiry(child.inquirySum, child.hasPlus);
+    const pageViewsText =
+      child.isLeaf && !hasChildren
+        ? child.leafPageViews
+        : child.pageViewsSum
+          ? String(child.pageViewsSum)
+          : '-';
+    const inquiryRateText =
+      child.isLeaf && !hasChildren
+        ? formatInquiryRate(child.leafInquiry, child.leafPageViews)
+        : formatInquiryRate(child.inquirySum, child.pageViewsSum);
     rows.push({
       rowKey,
       parentKey,
       level: child.level,
       name: child.name,
       inquiryText,
+      pageViewsText,
+      inquiryRateText,
       hasChildren,
       collapsed: hasChildren,
     });
@@ -47,7 +60,9 @@ function renderTreeBodyRows(rows) {
       return `
         <tr class="tree-row" data-row-key="${escapeHtml(row.rowKey)}" data-parent-key="${escapeHtml(row.parentKey)}" data-has-children="${row.hasChildren ? '1' : '0'}">
           <td class="tree-name" style="padding-left:${indent}px">${toggle}<span>${escapeHtml(row.name)}</span></td>
+          <td class="center">${escapeHtml(row.pageViewsText)}</td>
           <td class="center">${escapeHtml(row.inquiryText)}</td>
+          <td class="center">${escapeHtml(row.inquiryRateText)}</td>
         </tr>`;
     })
     .join('');
@@ -106,19 +121,21 @@ export function generateShopInquiryHtml({ shopUrl, categories = [], title, incom
 <body>
   <h1>指定同行询盘分布</h1>
   ${incompleteBanner}
-  <p class="meta">店铺：<strong>${escapeHtml(shopUrl)}</strong> · 生成日期 ${today} · 近 6 个月类目询盘</p>
+  <p class="meta">店铺：<strong>${escapeHtml(shopUrl)}</strong> · 生成日期 ${today} · 近 6 个月类目访客与询盘</p>
   <div class="summary-box">
-    <div>总询盘数：<strong>${escapeHtml(summary.totalInquiry)}</strong> · 叶子类目：<strong>${summary.leafCount}</strong></div>
+    <div>总询盘数：<strong>${escapeHtml(summary.totalInquiry)}</strong> · 总访客数：<strong>${escapeHtml(summary.totalPageViews)}</strong> · 叶子类目：<strong>${summary.leafCount}</strong></div>
     ${topLevelSummary ? `<ul>${topLevelSummary}</ul>` : ''}
   </div>
   <table>
     <thead>
       <tr>
         <th>类目</th>
+        <th class="center">类目访客</th>
         <th class="center">类目询盘</th>
+        <th class="center">询盘率</th>
       </tr>
     </thead>
-    <tbody>${renderTreeBodyRows(rows) || '<tr><td colspan="2" class="center">暂无数据</td></tr>'}</tbody>
+    <tbody>${renderTreeBodyRows(rows) || '<tr><td colspan="4" class="center">暂无数据</td></tr>'}</tbody>
   </table>
   <p class="footer">AI操盘手-重制版 · 版权所有 © 福建贸牛科技股份有限公司</p>
   <script>
@@ -166,14 +183,14 @@ export function renderShopInquiryPreviewHtml({ shopUrl, categories = [], incompl
     <section class="report-section shop-tree-report" data-shop-tree="1">
       <h4>指定同行询盘分布</h4>
       ${incompleteBanner}
-      <p class="report-note">店铺：${escapeHtml(shopUrl)} · 近 6 个月类目询盘</p>
+      <p class="report-note">店铺：${escapeHtml(shopUrl)} · 近 6 个月类目访客与询盘</p>
       <div class="summary-box">
-        <div>总询盘数：<strong>${escapeHtml(summary.totalInquiry)}</strong> · 叶子类目：<strong>${summary.leafCount}</strong></div>
+        <div>总询盘数：<strong>${escapeHtml(summary.totalInquiry)}</strong> · 总访客数：<strong>${escapeHtml(summary.totalPageViews)}</strong> · 叶子类目：<strong>${summary.leafCount}</strong></div>
         ${topLevelSummary ? `<ul class="summary-list">${topLevelSummary}</ul>` : ''}
       </div>
       <table class="report-table shop-tree-table">
-        <thead><tr><th>类目</th><th>类目询盘</th></tr></thead>
-        <tbody>${renderTreeBodyRows(rows) || '<tr><td colspan="2">暂无数据</td></tr>'}</tbody>
+        <thead><tr><th>类目</th><th>类目访客</th><th>类目询盘</th><th>询盘率</th></tr></thead>
+        <tbody>${renderTreeBodyRows(rows) || '<tr><td colspan="4">暂无数据</td></tr>'}</tbody>
       </table>
     </section>`;
 }

@@ -25,6 +25,27 @@
           <button type="submit" class="btn primary block">登录</button>
           <p id="loginError" class="form-error"></p>
         </form>
+        <form id="registerForm" class="login-form hidden">
+          <label class="field compact">
+            <span>邀请码</span>
+            <input id="registerInviteCode" type="text" autocomplete="off" placeholder="请输入邀请码" required />
+          </label>
+          <label class="field compact">
+            <span>账号</span>
+            <input id="registerUsername" type="text" autocomplete="username" placeholder="设置登录账号" required />
+          </label>
+          <label class="field compact">
+            <span>密码</span>
+            <input id="registerPassword" type="password" autocomplete="new-password" placeholder="设置登录密码" required />
+          </label>
+          <button type="submit" class="btn primary block">注册</button>
+          <p id="registerError" class="form-error"></p>
+          <p id="registerSuccess" class="form-success hidden"></p>
+        </form>
+        <p class="login-switch">
+          <button id="showRegisterBtn" type="button" class="link-btn">无账号？注册</button>
+          <button id="showLoginBtn" type="button" class="link-btn hidden">已有账号？登录</button>
+        </p>
         <p class="copyright">© 福建贸牛科技股份有限公司 · 保留所有权利</p>
       </div>
     </div>
@@ -38,6 +59,7 @@
         <nav class="nav">
           <button type="button" class="nav-item active" data-view="report">报告</button>
           <button type="button" class="nav-item" data-view="cache">缓存</button>
+          <button type="button" class="nav-item hidden" id="performanceNavItem" data-view="performance">性能</button>
           <button type="button" class="nav-item" data-view="accounts">账号</button>
         </nav>
         <div class="sidebar-foot">
@@ -126,7 +148,6 @@
                   <select id="top20CategoryFilter"></select>
                 </label>
                 <button id="downloadHtmlBtn" type="button" class="btn secondary">下载 HTML</button>
-                <button id="downloadExcelBtn" type="button" class="btn secondary hidden">下载 Excel</button>
                 <button id="exportPdfBtn" type="button" class="btn ghost">导出 PDF</button>
               </div>
             </div>
@@ -186,12 +207,41 @@
                     <th>插件版本</th>
                     <th>询盘数</th>
                     <th>参数</th>
-                    <th>状态</th>
                     <th>耗时</th>
                   </tr>
                 </thead>
                 <tbody id="cacheTableBody">
-                  <tr><td colspan="9" class="empty-cell">加载中...</td></tr>
+                  <tr><td colspan="8" class="empty-cell">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="performanceView" class="view">
+          <div class="card">
+            <div class="card-head row">
+              <div>
+                <h3>报告性能</h3>
+                <p>查看每份报告的明细耗时与异常信息，供性能与抓取问题分析</p>
+              </div>
+              <button id="refreshPerformanceBtn" type="button" class="btn secondary">刷新</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table performance-table">
+                <thead>
+                  <tr>
+                    <th class="perf-expand-col"></th>
+                    <th>对象</th>
+                    <th>类型</th>
+                    <th>生成人</th>
+                    <th>生成时间</th>
+                    <th>状态</th>
+                    <th>总耗时</th>
+                  </tr>
+                </thead>
+                <tbody id="performanceTableBody">
+                  <tr><td colspan="7" class="empty-cell">加载中...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -229,6 +279,10 @@
                     <option value="">无</option>
                   </select>
                 </label>
+                <label class="field compact admin-only-field hidden" id="accountInviteCodeWrap">
+                  <span>邀请码</span>
+                  <input id="accountInviteCode" type="text" placeholder="留空表示未设置，注册时将匹配此码" />
+                </label>
                 <div class="actions compact">
                   <button type="submit" class="btn primary">保存账号</button>
                   <button id="resetAccountFormBtn" type="button" class="btn ghost">重置</button>
@@ -255,11 +309,12 @@
                       <th>用户名</th>
                       <th>类型</th>
                       <th>上级</th>
+                      <th class="admin-only-col hidden">邀请码</th>
                       <th>操作</th>
                     </tr>
                   </thead>
                   <tbody id="accountsTableBody">
-                    <tr><td colspan="4" class="empty-cell">加载中...</td></tr>
+                    <tr><td colspan="5" class="empty-cell">加载中...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -312,6 +367,7 @@
             <button id="captchaOpenBtn" type="button" class="btn primary">打开验证页</button>
             <button id="captchaContinueBtn" type="button" class="btn secondary">继续生成</button>
           </div>
+          <p id="captchaOpenHint" class="captcha-open-hint hidden" role="status"></p>
         </div>
       </div>
     </div>

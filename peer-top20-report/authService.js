@@ -36,8 +36,39 @@ function sanitizeUser(user) {
   const { passwordHash, passwordSalt, ...safe } = user;
   return {
     ...safe,
+    inviteCode: user.inviteCode || '',
     roleLabel: ROLE_LABELS[user.role] || user.role,
   };
+}
+
+function normalizeInviteCode(value) {
+  return String(value || '').trim();
+}
+
+function findUserByInviteCode(users, inviteCode) {
+  const normalized = normalizeInviteCode(inviteCode);
+  if (!normalized) {
+    return null;
+  }
+  return (
+    users.find((user) => normalizeInviteCode(user.inviteCode).toLowerCase() === normalized.toLowerCase()) ||
+    null
+  );
+}
+
+function assertInviteCodeAvailable(users, inviteCode, excludeUserId = null) {
+  const normalized = normalizeInviteCode(inviteCode);
+  if (!normalized) {
+    return;
+  }
+  const conflict = users.find(
+    (user) =>
+      user.id !== excludeUserId &&
+      normalizeInviteCode(user.inviteCode).toLowerCase() === normalized.toLowerCase(),
+  );
+  if (conflict) {
+    throw new Error(`邀请码已被账号「${conflict.username}」使用`);
+  }
 }
 
 async function ensureDataDir() {
@@ -104,6 +135,45 @@ export async function login(username, password) {
     token,
     user: sanitizeUser(user),
   };
+}
+
+export async function registerWithInviteCode(payload = {}) {
+  const username = String(payload.username || '').trim();
+  const password = String(payload.password || '').trim();
+  const inviteCode = normalizeInviteCode(payload.inviteCode);
+
+  if (!username || !password) {
+    throw new Error('用户名和密码不能为空');
+  }
+  if (!inviteCode) {
+    throw new Error('邀请码不能为空');
+  }
+
+  const users = await readUsersFile();
+  const inviter = findUserByInviteCode(users, inviteCode);
+  if (!inviter) {
+    throw new Error('邀请码无效，请确认后重试');
+  }
+  if (users.some((item) => item.username === username)) {
+    throw new Error('用户名已存在');
+  }
+
+  const { salt, hash } = hashPassword(password);
+  const user = {
+    id: crypto.randomUUID(),
+    username,
+    displayName: username,
+    role: ROLES.EMPLOYEE,
+    parentId: inviter.id,
+    inviteCode: '',
+    passwordSalt: salt,
+    passwordHash: hash,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  users.push(user);
+  await writeUsersFile(users);
+  return login(username, password);
 }
 
 export function logout(token) {
@@ -197,20 +267,26 @@ export async function listParentCandidatesForOperator(operator, targetUserId) {
 }
 
 export async function createUser(payload, operator) {
-  if (operator.role !== ROLES.ADMIN) {
-    throw new Error('仅管理员可创建账号');
-  }
-
   const username = String(payload.username || '').trim();
   const password = String(payload.password || '').trim();
-  const role = payload.role || ROLES.EMPLOYEE;
-  const parentId = payload.parentId || null;
+  let role = payload.role || ROLES.EMPLOYEE;
+  let parentId = payload.parentId || null;
+
+  if (operator.role === ROLES.EMPLOYEE) {
+    role = ROLES.EMPLOYEE;
+    parentId = operator.id;
+  } else if (operator.role !== ROLES.ADMIN) {
+    throw new Error('无权创建账号');
+  }
 
   if (!username || !password) {
     throw new Error('用户名和密码不能为空');
   }
   if (!Object.values(ROLES).includes(role)) {
     throw new Error('账号类型无效');
+  }
+  if (operator.role === ROLES.EMPLOYEE && role !== ROLES.EMPLOYEE) {
+    throw new Error('员工仅可创建员工账号');
   }
 
   const users = await readUsersFile();
@@ -221,6 +297,12 @@ export async function createUser(payload, operator) {
     throw new Error('上级人员不存在');
   }
 
+  let inviteCode = '';
+  if (operator.role === ROLES.ADMIN && payload.inviteCode !== undefined) {
+    inviteCode = normalizeInviteCode(payload.inviteCode);
+    assertInviteCodeAvailable(users, inviteCode);
+  }
+
   const { salt, hash } = hashPassword(password);
   const user = {
     id: crypto.randomUUID(),
@@ -228,6 +310,7 @@ export async function createUser(payload, operator) {
     displayName: username,
     role,
     parentId,
+    inviteCode,
     passwordSalt: salt,
     passwordHash: hash,
     createdAt: new Date().toISOString(),
@@ -279,6 +362,9 @@ export async function updateUser(id, payload, operator) {
   }
 
   if (payload.parentId !== undefined) {
+    if (operator.role !== ROLES.ADMIN) {
+      throw new Error('无权修改上级人员');
+    }
     if (payload.parentId && !users.some((item) => item.id === payload.parentId)) {
       throw new Error('上级人员不存在');
     }
@@ -286,6 +372,14 @@ export async function updateUser(id, payload, operator) {
       throw new Error('上级人员不能是自己');
     }
     current.parentId = payload.parentId || null;
+  }
+  if (payload.inviteCode !== undefined) {
+    if (operator.role !== ROLES.ADMIN) {
+      throw new Error('无权修改邀请码');
+    }
+    const inviteCode = normalizeInviteCode(payload.inviteCode);
+    assertInviteCodeAvailable(users, inviteCode, current.id);
+    current.inviteCode = inviteCode;
   }
   if (payload.password) {
     const { salt, hash } = hashPassword(payload.password);

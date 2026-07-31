@@ -128,6 +128,30 @@ button, input, select, textarea {
 }
 
 .login-form { margin-top: 14px; }
+
+.login-switch {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #2563eb;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.form-success {
+  margin-top: 8px;
+  color: #059669;
+  font-size: 12px;
+}
 .copyright { margin-top: 14px; text-align: center; }
 
 .app-shell {
@@ -393,6 +417,85 @@ button, input, select, textarea {
   font-size: 11px;
 }
 
+.pdf-export-root.pdf-export-top20 {
+  width: 1060px;
+  max-width: 1060px;
+  box-sizing: border-box;
+  padding: 10px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.pdf-export-top20 h2 {
+  font-size: 15px;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.pdf-export-top20 h4 {
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+  margin-bottom: 4px;
+}
+
+.pdf-export-top20 .report-note {
+  font-size: 9px;
+  line-height: 1.25;
+  margin-bottom: 6px;
+}
+
+.pdf-export-top20 .report-section {
+  margin-bottom: 10px;
+}
+
+.pdf-export-top20 table.top20-pdf-table {
+  table-layout: auto;
+  width: 100%;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.pdf-export-top20 table.top20-pdf-table th,
+.pdf-export-top20 table.top20-pdf-table td {
+  padding: 2px 4px;
+  vertical-align: top;
+  text-align: center;
+}
+
+.pdf-export-top20 table.top20-pdf-table .col-shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.pdf-export-top20 table.top20-pdf-table td.col-company,
+.pdf-export-top20 table.top20-pdf-table td.col-main,
+.pdf-export-top20 table.top20-pdf-table th.col-company,
+.pdf-export-top20 table.top20-pdf-table th.col-main {
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.pdf-export-top20 table.top20-pdf-table .col-main {
+  min-width: 0;
+}
+
+.pdf-export-top20 .summary-row td {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.pdf-export-top20 .pdf-export-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .empty-box {
   padding: 24px;
   text-align: center;
@@ -634,6 +737,17 @@ button, input, select, textarea {
   gap: 10px;
 }
 
+.captcha-open-hint {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  text-align: center;
+}
+
 .captcha-link-list {
   display: flex;
   flex-direction: column;
@@ -706,6 +820,41 @@ button, input, select, textarea {
   color: #92400e;
 }
 .update-notice p { margin: 4px 0 0; line-height: 1.6; }
+
+.performance-table .perf-expand-col {
+  width: 36px;
+  text-align: center;
+}
+.performance-toggle {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.performance-detail-row td {
+  background: #f9fafb;
+  padding: 0;
+}
+.performance-detail {
+  padding: 10px 14px 12px 42px;
+}
+.performance-detail-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.performance-detail-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 1fr; }

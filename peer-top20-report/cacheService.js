@@ -185,6 +185,40 @@ export async function listReportCache() {
   return enriched.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
+export async function listPerformanceReports() {
+  const items = await listReportCache();
+  const detailed = await Promise.all(
+    items.map(async (summary) => {
+      try {
+        const full = await getReportCache(summary.id);
+        return {
+          id: full.id,
+          title: full.title,
+          type: full.type,
+          typeLabel: full.typeLabel || REPORT_TYPE_LABELS[full.type] || full.type,
+          targetObject: deriveTargetObject(full),
+          createdBy: full.createdBy,
+          createdAt: full.createdAt,
+          pluginVersion: full.pluginVersion || '-',
+          status: full.status,
+          durationMs: full.durationMs || 0,
+          errorMessage: full.errorMessage || '',
+          reportParams: computeReportParams(full) || '',
+          inquirySummary: computeInquirySummary(full) || '',
+          payload: full.payload || null,
+        };
+      } catch {
+        return {
+          ...summary,
+          payload: null,
+          errorMessage: summary.errorMessage || '',
+        };
+      }
+    }),
+  );
+  return detailed.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
 export async function getReportCache(id) {
   await ensureCacheDir();
   try {

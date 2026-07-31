@@ -336,15 +336,22 @@ function resolveCategoryPagePath(category, groupUrlByTitle = {}) {
   return null;
 }
 
-function extractGroupUrlMapFromHtml(html) {
+function extractProductGroupsFromHtml(html) {
   if (!html) {
-    return {};
+    return [];
   }
   const modules = extractGridModules(html);
+  const moduleData = extractModuleByName(html, 'icbu-pc-productGroups');
   const groups =
-    getNested(modules, 'productGroups', 'mds', 'moduleData', 'data', 'groups') || [];
+    getNested(modules, 'productGroups', 'mds', 'moduleData', 'data', 'groups') ||
+    getNested(moduleData, 'mds', 'moduleData', 'data', 'groups') ||
+    [];
+  return Array.isArray(groups) ? groups : [];
+}
+
+function extractGroupUrlMapFromHtml(html) {
   const map = {};
-  for (const group of groups) {
+  for (const group of extractProductGroupsFromHtml(html)) {
     const title = String(group?.name || '').trim().toLowerCase();
     if (title && group?.url) {
       map[title] = group.url.startsWith('/') ? group.url : `/${group.url}`;
@@ -434,6 +441,52 @@ async function fetchProductsForCategoryTab(
   return createProductCategoryEntries(inlineIds, categoryMeta);
 }
 
+async function fetchProductListProfileGroups(shopUrl, verifyUrl) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const html = await fetchShopHtml(`${shopUrl}/productlist.html`, verifyUrl);
+      const groups = extractProductGroupsFromHtml(html);
+      if (groups.length) {
+        return groups;
+      }
+    } catch (error) {
+      if (error instanceof CaptchaError) {
+        throw error;
+      }
+      if (attempt < 2) {
+        await sleep(400 * (attempt + 1));
+      }
+    }
+  }
+  return [];
+}
+
+async function fetchProductsForProfileGroups(
+  shopUrl,
+  groups,
+  verifyUrl,
+  stats,
+  productsPerCategory,
+) {
+  if (!groups.length) {
+    return { profileIds: [], productCategoryEntries: [] };
+  }
+
+  stats.profileCategoryCount = groups.length;
+  const results = await mapWithConcurrency(
+    groups,
+    SEARCH_CONCURRENCY,
+    async (group) =>
+      fetchProductsForLegacyProfileGroup(shopUrl, group, verifyUrl, stats, productsPerCategory),
+    PROFILE_CATEGORY_FETCH_DELAY_MS,
+  );
+  const entries = results.flat();
+  return {
+    profileIds: uniqueProductIds(entries.map((entry) => entry.productId)),
+    productCategoryEntries: entries,
+  };
+}
+
 async function fetchProductsForLegacyProfileGroup(
   shopUrl,
   group,
@@ -505,18 +558,13 @@ async function collectCompanyProfileProductIds(
       [];
 
     if (groups.length) {
-      stats.profileCategoryCount = groups.length;
-      const results = await mapWithConcurrency(
+      return fetchProductsForProfileGroups(
+        shopUrl,
         groups,
-        SEARCH_CONCURRENCY,
-        async (group) =>
-          fetchProductsForLegacyProfileGroup(shopUrl, group, verifyUrl, stats, productsPerCategory),
+        verifyUrl,
+        stats,
+        productsPerCategory,
       );
-      const entries = results.flat();
-      return {
-        profileIds: uniqueProductIds(entries.map((entry) => entry.productId)),
-        productCategoryEntries: entries,
-      };
     }
 
     return {
@@ -525,6 +573,17 @@ async function collectCompanyProfileProductIds(
       ),
       productCategoryEntries: [],
     };
+  }
+
+  const productListGroups = await fetchProductListProfileGroups(shopUrl, verifyUrl);
+  if (productListGroups.length) {
+    return fetchProductsForProfileGroups(
+      shopUrl,
+      productListGroups,
+      verifyUrl,
+      stats,
+      productsPerCategory,
+    );
   }
 
   return { profileIds: [], productCategoryEntries: [] };
@@ -613,7 +672,7 @@ function captureDetailDebug(debugContext, payload) {
   console.log('[Peer Top20 debug] product detail sample', payload);
 }
 
-async function fetchProductDetailCategory(productDetailUrl, inquiries, verifyUrl, debugContext) {
+async function fetchProductDetailCategory(productDetailUrl, inquiries, pageViews, verifyUrl, debugContext) {
   const result = await fetchProductDetailCategoryInfo(productDetailUrl, {
     verifyUrl,
     debugContext,
@@ -625,6 +684,7 @@ async function fetchProductDetailCategory(productDetailUrl, inquiries, verifyUrl
   return {
     ...result,
     iquiries: inquiries,
+    pageViews,
   };
 }
 
@@ -642,6 +702,7 @@ function hasInquiryValue(value) {
 async function getProductCategoryInquiry(
   productDetailUrl,
   inquiries,
+  pageViews,
   verifyUrl,
   stats,
   debugContext,
@@ -651,6 +712,7 @@ async function getProductCategoryInquiry(
     const result = await fetchProductDetailCategory(
       productDetailUrl,
       inquiries,
+      pageViews,
       verifyUrl,
       debugContext,
     );
@@ -764,6 +826,7 @@ async function resolveHighInquiryCategories(compareItems, verifyUrl, stats, debu
         productDetailUrl,
         inquiries,
         inquiryNumber,
+        pageViews: item.compareCompanyView?.pageViews,
       };
     })
     .filter(Boolean);
@@ -779,6 +842,7 @@ async function resolveHighInquiryCategories(compareItems, verifyUrl, stats, debu
       const result = await getProductCategoryInquiry(
         tasks[index].productDetailUrl,
         tasks[index].inquiries,
+        tasks[index].pageViews,
         verifyUrl,
         stats,
         debugContext,

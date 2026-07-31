@@ -11,12 +11,13 @@ import {
   listParentCandidatesForOperator,
   login,
   logout,
+  registerWithInviteCode,
   getSessionUser,
   updateUser,
   canViewReportByCreator,
   getUserDirectory,
 } from './authService.js';
-import { getReportCache, listReportCache, saveReportCache, REPORT_TYPES, findBestShopInquiryCache, shouldReuseShopInquiryCache } from './cacheService.js';
+import { getReportCache, listPerformanceReports, listReportCache, saveReportCache, REPORT_TYPES, findBestShopInquiryCache, shouldReuseShopInquiryCache } from './cacheService.js';
 import { getExtensionInfo, streamExtensionZip, watchExtensionBuild } from './extensionService.js';
 import { normalizeAlibabaShopUrl } from './shopUrl.js';
 import { parseKeywordsInput } from './mockData.js';
@@ -25,6 +26,14 @@ import { buildShopInquiryIncompleteNote, buildTop20IncompleteNote } from './repo
 import { buildShopInquiryTitle, generateShopInquiryHtml } from './shopInquiryReport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function formatDuration(ms) {
+  const value = Number(ms) || 0;
+  if (value < 1000) {
+    return `${value}ms`;
+  }
+  return `${(value / 1000).toFixed(1)}s`;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3456;
@@ -63,6 +72,16 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message || '登录失败' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, password, inviteCode } = req.body || {};
+    const result = await registerWithInviteCode({ username, password, inviteCode });
+    res.json({ success: true, ...result, message: '注册成功' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message || '注册失败' });
   }
 });
 
@@ -119,7 +138,7 @@ app.get('/api/users/parent-options/:targetId', async (req, res) => {
   }
 });
 
-app.post('/api/users', requireAdmin(), async (req, res) => {
+app.post('/api/users', requireAuth(), async (req, res) => {
   try {
     const user = await createUser(req.body || {}, req.user);
     res.json({ success: true, user });
@@ -174,6 +193,15 @@ app.get('/api/cache/:id', async (req, res) => {
   }
 });
 
+app.get('/api/performance', requireAdmin(), async (req, res) => {
+  try {
+    const items = await listPerformanceReports();
+    res.json({ success: true, items });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 app.post('/api/reports/top20', async (req, res) => {
   const startedAt = Date.now();
   try {
@@ -205,9 +233,8 @@ app.post('/api/reports/top20', async (req, res) => {
         };
     const reportStatus = isComplete ? 'success' : 'incomplete';
     const incompleteNote = reportStatus === 'incomplete' ? buildTop20IncompleteNote(scrapeStats) : '';
-    const baseMessage = `已生成 Top 同行报告（${keywordList.length} 个关键词，抓取 ${searchPageCount} 页）`;
-    const statusMessage =
-      reportStatus === 'incomplete' ? `${incompleteNote}；${baseMessage}` : baseMessage;
+    const baseMessage = `已生成 Top 同行报告（${keywordList.length} 个关键词，参数${searchPageCount}，总耗时${formatDuration(timings.totalMs)}）`;
+    const statusMessage = baseMessage;
     const cacheItem = await saveReportCache({
       title: report.title,
       type: REPORT_TYPES.TOP20,
@@ -286,6 +313,7 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
       20,
       Math.max(1, Number.parseInt(req.body?.productsPerCategory, 10) || 2),
     );
+    const totalMs = Number(req.body?.durationMs) || Date.now() - startedAt;
     const bestCached = await findBestShopInquiryCache(normalizedShopUrl);
     let finalCategories = categories;
     let reusedFromCache = false;
@@ -348,13 +376,11 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
       },
     });
 
+    const shopHeadline = `已生成指定同行询盘分布（参数${productsPerCategory}，总耗时${formatDuration(totalMs)}）`;
     const baseMessage = normalized.wasCorrected
-      ? `${normalized.correctionHint}；已生成指定同行询盘分布`
-      : '已生成指定同行询盘分布';
-    const statusMessage =
-      reportStatus === 'incomplete'
-        ? `${incompleteNote}；${baseMessage}`
-        : baseMessage;
+      ? `${normalized.correctionHint}；${shopHeadline}`
+      : shopHeadline;
+    const statusMessage = reuseNote ? `${reuseNote}；${baseMessage}` : baseMessage;
 
     res.json({
       success: true,
@@ -387,25 +413,6 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
     res.status(400).json({
       success: false,
       message: error.message || '报告生成失败',
-    });
-  }
-});
-
-app.post('/api/reports/export/excel', async (req, res) => {
-  try {
-    const { input, options } = buildTop20Input(req.body);
-    const report = await createReportFromInput(input, options);
-    const filename = encodeURIComponent(`${report.title}.xlsx`);
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
-    res.send(Buffer.from(report.excelBuffer));
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message || 'Excel 导出失败',
     });
   }
 });

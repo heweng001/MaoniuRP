@@ -4,6 +4,16 @@ import { getCompareProductsData, CaptchaError } from './compare-products.js';
 import { mapWithConcurrency, SEARCH_CONCURRENCY } from './parallel-fetch.js';
 import { SCRAPE_MAX_RETRIES, SCRAPE_RETRY_DELAY_MS, sleep } from './scrape-retry.js';
 import {
+  createFailureStats,
+  createScrapeDiagnostics,
+  recordCompareFailure,
+  recordDetailFailure,
+  captureCompareSuccessSample,
+  captureCompareFailureSample,
+  mergeFailureStats,
+  hasScrapeDiagnostics,
+} from './scrape-failure-stats.js';
+import {
   fetchProductDetailCategory,
   formatCategoryDisplay,
   buildProductDetailUrl,
@@ -12,7 +22,10 @@ import {
 const DEFAULT_SEARCH_PAGE_COUNT = 5;
 const COMPARE_BATCH_SIZE = 20;
 const COMPARE_CONCURRENCY = 2;
-const INQUIRY_THRESHOLD = 50;
+/** 类目解析：仅对询盘高于此阈值的产品抓取详情页 */
+export const INQUIRY_PARSE_THRESHOLD = 40;
+/** 报告展示：compare 结果中询盘高于此阈值的店铺/product 进入报告 */
+export const INQUIRY_REPORT_THRESHOLD = 40;
 const TOP20_DETAIL_CONCURRENCY = 10;
 const TOP20_DETAIL_DELAY_MS = 150;
 const DETAIL_PARSE_MAX_RETRIES = 2;
@@ -67,6 +80,10 @@ function convertStringInquiryToInt(value) {
 
 function getInquiryNumber(item) {
   return convertStringInquiryToInt(item?.compareCompanyView?.iquiries) || 0;
+}
+
+function filterInquiryAbove(items, threshold) {
+  return (items || []).filter((item) => getInquiryNumber(item) > threshold);
 }
 
 function partition(array, size) {
@@ -186,6 +203,24 @@ async function getKeywordSearchResult(keyword, page) {
   }));
 
   return { captcha: false, items };
+}
+
+function dedupeSearchResultsByCompany(items) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of items || []) {
+    const companyKey = String(item.supplierName || '').trim().toLowerCase();
+    if (!companyKey) {
+      deduped.push(item);
+      continue;
+    }
+    if (seen.has(companyKey)) {
+      continue;
+    }
+    seen.add(companyKey);
+    deduped.push(item);
+  }
+  return deduped;
 }
 
 async function fetchAllSearchPages(keyword, searchPageCount, onProgress) {
@@ -339,11 +374,15 @@ function buildCategoryGroups(records) {
     .reverse();
 }
 
-async function fetchCompareBatchWithRetry(batch) {
+async function fetchCompareBatchWithRetry(batch, scrapeContext = {}) {
+  const { failureStats, diagnostics } = scrapeContext;
   let lastError;
   for (let attempt = 0; attempt <= SCRAPE_MAX_RETRIES; attempt += 1) {
     try {
-      const listView = await getCompareProductsData(batch);
+      const listView = await getCompareProductsData(batch, {
+        verifyUrl: TOP20_DETAIL_VERIFY_URL,
+        onDebugSample: (payload) => captureCompareSuccessSample(diagnostics, payload),
+      });
       if (!listView?.length) {
         throw new Error('compareProducts 返回空数据');
       }
@@ -358,11 +397,19 @@ async function fetchCompareBatchWithRetry(batch) {
       }
     }
   }
+  const reason = recordCompareFailure(failureStats, lastError);
+  captureCompareFailureSample(diagnostics, {
+    capturedAt: new Date().toISOString(),
+    source: 'https://www.alibaba.com/detail/compareProducts.html',
+    productIds: [...batch],
+    reason,
+    message: lastError?.message || String(lastError),
+  });
   console.warn('[Peer Top20] compare batch failed after retries:', lastError);
   return null;
 }
 
-async function fetchAllCompareProducts(productIds, timings, onProgress) {
+async function fetchAllCompareProducts(productIds, timings, onProgress, scrapeContext = {}) {
   const batches = partition(productIds, COMPARE_BATCH_SIZE);
   timings.compareBatches = batches.length;
   const productMap = new Map();
@@ -379,12 +426,24 @@ async function fetchAllCompareProducts(productIds, timings, onProgress) {
     const batchResults = await Promise.all(
       batchGroup.map(async (batch) => {
         try {
-          return await fetchCompareBatchWithRetry(batch);
+          const listView = await fetchCompareBatchWithRetry(batch, scrapeContext);
+          if (!listView) {
+            timings.compareBatchFailures += 1;
+          }
+          return listView;
         } catch (error) {
           if (error instanceof CaptchaError) {
             throw error;
           }
           console.warn('[Peer Top20] compare batch failed after retries:', error);
+          const reason = recordCompareFailure(scrapeContext.failureStats, error);
+          captureCompareFailureSample(scrapeContext.diagnostics, {
+            capturedAt: new Date().toISOString(),
+            source: 'https://www.alibaba.com/detail/compareProducts.html',
+            productIds: [...batch],
+            reason,
+            message: error?.message || String(error),
+          });
           timings.compareBatchFailures += 1;
           return null;
         }
@@ -416,31 +475,41 @@ async function fetchAllCompareProducts(productIds, timings, onProgress) {
   return allResults;
 }
 
-async function fetchItemCategoryInfo(item) {
+async function fetchItemCategoryInfo(item, scrapeContext = {}) {
   const compareProductView = item.compareProductView || {};
   const productDetailUrl = buildProductDetailUrl(
     compareProductView.productId,
     compareProductView.productDetailUrl || compareProductView.detailUrl,
   );
   if (!productDetailUrl) {
+    recordDetailFailure(scrapeContext.failureStats, 'no-detail-url');
     return null;
   }
 
   try {
-    return await fetchProductDetailCategory(productDetailUrl, {
+    const categoryInfo = await fetchProductDetailCategory(productDetailUrl, {
       verifyUrl: TOP20_DETAIL_VERIFY_URL,
       productId: compareProductView.productId,
+      diagnostics: scrapeContext.diagnostics,
+      onDetailFailure: (payload) => {
+        recordDetailFailure(scrapeContext.failureStats, payload?.reason || 'other');
+      },
     });
+    if (!categoryInfo) {
+      return null;
+    }
+    return categoryInfo;
   } catch (error) {
     if (error instanceof CaptchaError) {
       throw error;
     }
+    recordDetailFailure(scrapeContext.failureStats, error);
     console.warn('[Peer Top20] product category failed:', error);
     return null;
   }
 }
 
-async function resolveProductCategories(items, onProgress) {
+async function resolveProductCategories(items, onProgress, scrapeContext = {}) {
   const categories = new Array(items.length).fill(null);
   let detailRetryRounds = 0;
 
@@ -448,7 +517,7 @@ async function resolveProductCategories(items, onProgress) {
     if (categories[index]) {
       return categories[index];
     }
-    const categoryInfo = await fetchItemCategoryInfo(items[index]);
+    const categoryInfo = await fetchItemCategoryInfo(items[index], scrapeContext);
     categories[index] = categoryInfo;
     return categoryInfo;
   }
@@ -492,82 +561,154 @@ async function resolveProductCategories(items, onProgress) {
   };
 }
 
-export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH_PAGE_COUNT, onProgress = () => {} }) {
+export async function fetchPeerTop20({
+  keyword,
+  keywords,
+  searchPageCount = DEFAULT_SEARCH_PAGE_COUNT,
+  onProgress = () => {},
+}) {
   keywordSearchResult = [];
+  const keywordList = (Array.isArray(keywords) && keywords.length ? keywords : [keyword])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  if (!keywordList.length) {
+    throw new Error('请输入至少一个关键词');
+  }
+
+  const displayKeyword = keywordList.join('、');
   const pageCount = normalizeSearchPageCount(searchPageCount);
   const timings = createTimings(pageCount);
+  timings.keywordCount = keywordList.length;
+  const failureStats = createFailureStats();
+  const diagnostics = createScrapeDiagnostics();
+  const scrapeContext = { failureStats, diagnostics };
   const totalStartedAt = Date.now();
 
-  const normalizedKeyword =
-    keyword.indexOf(',') !== -1 ? keyword.substring(0, keyword.indexOf(',')) : keyword;
-
   const searchStartedAt = Date.now();
-  const searchState = await fetchAllSearchPages(normalizedKeyword, pageCount, onProgress);
-  if (searchState.captcha) {
-    return true;
-  }
-  keywordSearchResult = searchState.items;
-  timings.searchMs = Date.now() - searchStartedAt;
+  const mergedItems = [];
 
-  const productIds = [
-    ...new Set(keywordSearchResult.map((item) => item.productId).filter(Boolean)),
-  ];
-  timings.uniqueProducts = productIds.length;
+  for (let index = 0; index < keywordList.length; index += 1) {
+    const rawKeyword = keywordList[index];
+    const normalizedKeyword =
+      rawKeyword.indexOf(',') !== -1 ? rawKeyword.substring(0, rawKeyword.indexOf(',')) : rawKeyword;
+    const keywordLabel =
+      keywordList.length > 1
+        ? `关键词「${normalizedKeyword}」（${index + 1}/${keywordList.length}）`
+        : '关键词';
+    const searchState = await fetchAllSearchPages(
+      normalizedKeyword,
+      pageCount,
+      (progress, message) => {
+        const slice = 35 / keywordList.length;
+        const base = 5 + slice * index;
+        const local = Math.max(0, Math.min(1, (progress - 5) / 35));
+        onProgress(
+          Math.round(base + local * slice),
+          String(message || '').replace(/关键词/g, keywordLabel),
+        );
+      },
+    );
+    if (searchState.captcha) {
+      return true;
+    }
+    mergedItems.push(...(searchState.items || []));
+  }
+
+  keywordSearchResult = dedupeSearchResultsByCompany(mergedItems);
+  timings.searchMs = Date.now() - searchStartedAt;
+  timings.uniqueProducts = keywordSearchResult.length;
+  timings.uniqueSuppliers = keywordSearchResult.length;
+
+  const productIds = keywordSearchResult.map((item) => item.productId).filter(Boolean);
 
   if (!productIds.length) {
     timings.totalMs = Date.now() - totalStartedAt;
+    timings.failureStats = failureStats;
     return {
-      keyword: normalizedKeyword,
+      keyword: displayKeyword,
       effectData: [],
       effectDataCategoryGrouped: [],
+      scrapingStats: {
+        isComplete: true,
+        failureStats,
+        diagnostics: null,
+      },
+      failureStats,
+      diagnostics: null,
       timings,
     };
   }
 
-  const allCompareResults = await fetchAllCompareProducts(productIds, timings, onProgress);
-  const highInquiryProducts = allCompareResults.filter(
-    (item) => getInquiryNumber(item) > INQUIRY_THRESHOLD,
+  const allCompareResults = await fetchAllCompareProducts(
+    productIds,
+    timings,
+    onProgress,
+    scrapeContext,
   );
+  const reportCandidates = filterInquiryAbove(allCompareResults, INQUIRY_REPORT_THRESHOLD);
+  const parseCandidates = filterInquiryAbove(allCompareResults, INQUIRY_PARSE_THRESHOLD);
 
   onProgress(
     86,
-    `已筛选询盘>${INQUIRY_THRESHOLD}的 ${highInquiryProducts.length} 个产品，十路并发解析类目…`,
+    `已筛选询盘>${INQUIRY_PARSE_THRESHOLD}的 ${parseCandidates.length} 个产品解析类目，报告纳入询盘>${INQUIRY_REPORT_THRESHOLD}的 ${reportCandidates.length} 个…`,
   );
   const detailStartedAt = Date.now();
-  const categoryOutcome = await resolveProductCategories(highInquiryProducts, onProgress);
+  const categoryOutcome = await resolveProductCategories(
+    parseCandidates,
+    onProgress,
+    scrapeContext,
+  );
   timings.detailMs = Date.now() - detailStartedAt;
-  timings.detailCandidates = highInquiryProducts.length;
+  timings.detailCandidates = parseCandidates.length;
   timings.detailSuccess = categoryOutcome.detailSuccess;
   timings.detailFailed = categoryOutcome.detailFailed;
   timings.detailRetryRounds = categoryOutcome.detailRetryRounds;
-  timings.inquiryThreshold = INQUIRY_THRESHOLD;
-  timings.highInquiryProductCount = highInquiryProducts.length;
+  timings.inquiryThreshold = INQUIRY_REPORT_THRESHOLD;
+  timings.inquiryParseThreshold = INQUIRY_PARSE_THRESHOLD;
+  timings.highInquiryProductCount = reportCandidates.length;
 
   onProgress(96, '正在整理同行数据…');
   const rankStartedAt = Date.now();
-  const parsedRecords = highInquiryProducts.map((item, index) =>
-    toIndustryData(item, categoryOutcome.categories[index]),
-  );
+  const categoryByProductId = new Map();
+  parseCandidates.forEach((item, index) => {
+    const productId = item?.compareProductView?.productId;
+    if (productId != null && productId !== '') {
+      categoryByProductId.set(String(productId), categoryOutcome.categories[index]);
+    }
+  });
+  const parsedRecords = reportCandidates.map((item) => {
+    const productId = item?.compareProductView?.productId;
+    const categoryInfo =
+      productId != null && productId !== ''
+        ? categoryByProductId.get(String(productId)) || null
+        : null;
+    return toIndustryData(item, categoryInfo);
+  });
   const effectDataCategoryGrouped = buildCategoryGroups(parsedRecords);
   const effectData = effectDataCategoryGrouped.flatMap((group) => group.value);
   const scrapingStats = {
     compareBatches: timings.compareBatches,
     compareBatchFailures: timings.compareBatchFailures,
-    detailCandidates: highInquiryProducts.length,
+    detailCandidates: parseCandidates.length,
     detailSuccess: categoryOutcome.detailSuccess,
     detailFailed: categoryOutcome.detailFailed,
     detailRetryRounds: categoryOutcome.detailRetryRounds,
-    inquiryThreshold: INQUIRY_THRESHOLD,
-    highInquiryProductCount: highInquiryProducts.length,
+    inquiryThreshold: INQUIRY_REPORT_THRESHOLD,
+    inquiryParseThreshold: INQUIRY_PARSE_THRESHOLD,
+    highInquiryProductCount: reportCandidates.length,
+    failureStats,
+    diagnostics: hasScrapeDiagnostics(diagnostics) ? diagnostics : null,
     isComplete: timings.compareBatchFailures === 0 && categoryOutcome.detailFailed === 0,
   };
+  timings.failureStats = failureStats;
+  timings.diagnostics = scrapingStats.diagnostics;
   timings.isComplete = scrapingStats.isComplete;
   timings.rankMs = Date.now() - rankStartedAt;
   timings.totalMs = Date.now() - totalStartedAt;
 
   onProgress(100, '抓取完成');
   console.log(
-    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），询盘>${INQUIRY_THRESHOLD} ${highInquiryProducts.length} 个，类目解析 ${categoryOutcome.detailSuccess}/${highInquiryProducts.length}，报告 ${effectData.length} 家公司，完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
+    `[Peer Top20] ${displayKeyword}: ${pageCount}页×${keywordList.length}词，去重后产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），报告询盘>${INQUIRY_REPORT_THRESHOLD} ${reportCandidates.length} 个，类目解析 ${categoryOutcome.detailSuccess}/${parseCandidates.length}，报告 ${effectData.length} 家公司，完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
     timings,
     scrapingStats,
   );
@@ -576,10 +717,12 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
   }
 
   return {
-    keyword: normalizedKeyword,
+    keyword: displayKeyword,
     effectData,
     effectDataCategoryGrouped,
     scrapingStats,
+    failureStats,
+    diagnostics: scrapingStats.diagnostics,
     timings,
   };
 }
@@ -587,10 +730,16 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
 export function mergeTop20Timings(items = []) {
   const merged = createTimings();
   merged.searchPages = DEFAULT_SEARCH_PAGE_COUNT;
+  const mergedFailureStats = createFailureStats();
+  let mergedDiagnostics = null;
 
   for (const item of items) {
     if (!item?.timings) {
       continue;
+    }
+    mergeFailureStats(mergedFailureStats, item.failureStats || item.scrapingStats?.failureStats);
+    if (!mergedDiagnostics && hasScrapeDiagnostics(item.diagnostics || item.scrapingStats?.diagnostics)) {
+      mergedDiagnostics = item.diagnostics || item.scrapingStats?.diagnostics;
     }
     if (item.timings.searchPages) {
       merged.searchPages = Math.max(merged.searchPages, item.timings.searchPages);
@@ -613,6 +762,8 @@ export function mergeTop20Timings(items = []) {
   merged.isComplete =
     items.length > 0 &&
     items.every((item) => item.scrapingStats?.isComplete !== false && item.timings?.isComplete !== false);
+  merged.failureStats = mergedFailureStats;
+  merged.diagnostics = mergedDiagnostics;
 
   return merged;
 }

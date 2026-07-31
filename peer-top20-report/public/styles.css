@@ -548,30 +548,16 @@ button, input, select, textarea {
   width: 100%;
   border-collapse: collapse;
   font-size: 10px;
-  table-layout: fixed;
 }
 .report-table th, .report-table td {
   border: 1px solid var(--border);
   padding: 4px 6px;
 }
 .report-table th { background: #f9fafb; }
-.report-table.table-balanced .col-rank { width: 5%; }
-.report-table.table-balanced .col-company,
-.report-table.table-balanced .col-main,
-.report-table.table-balanced .col-category {
-  width: 12%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.report-table.table-balanced .col-main {
-  width: 10%;
-}
-.report-table .cell-ellipsis {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.report-table .col-main {
+  max-width: 100px;
+  white-space: normal;
+  word-break: break-word;
 }
 .row-actions {
   align-items: center;

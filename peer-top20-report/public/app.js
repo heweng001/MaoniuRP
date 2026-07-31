@@ -119,23 +119,6 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-function truncateText(text, maxLen = 28) {
-  const value = String(text || '').trim();
-  if (value.length <= maxLen) {
-    return value;
-  }
-  return `${value.slice(0, maxLen)}…`;
-}
-
-function renderEllipsisCell(text, maxLen = 28) {
-  const full = String(text || '').trim() || '-';
-  const short = truncateText(full, maxLen);
-  if (short === full) {
-    return escapeHtml(full);
-  }
-  return `<span class="cell-ellipsis" title="${escapeHtml(full)}">${escapeHtml(short)}</span>`;
-}
-
 function parseKeywords(text) {
   return String(text || '')
     .split(/[\n,，;；]+/)
@@ -571,11 +554,14 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
       productsPerCategory,
       categoryCount: result.categories?.length,
     });
+    const previewMessage = isAdminUser()
+      ? statusMessage
+      : buildShopInquiryPublicMessage(result.message);
     const statusType = result.status === 'incomplete' ? 'warning' : 'success';
     showPreview({
       type: 'shop-inquiry',
       title: result.title,
-      message: statusMessage,
+      message: previewMessage,
       html: result.html,
       shopPayload: {
         shopUrl: result.shopUrl,
@@ -585,7 +571,7 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
     });
     setLine(
       shopStatus,
-      statusMessage || (result.status === 'incomplete' ? '报告不完整' : '报告生成成功'),
+      result.status === 'incomplete' ? '报告不完整' : '报告生成成功',
       statusType,
     );
     state.pendingCaptchaRetry = null;
@@ -610,7 +596,8 @@ function renderShopInquiryActionCell(home) {
 }
 
 function bindAdvancedPanels() {
-  document.querySelectorAll('.advanced-toggle').forEach((button) => {
+  document.querySelectorAll('.advanced-toggle:not([data-bound="true"])').forEach((button) => {
+    button.dataset.bound = 'true';
     button.addEventListener('click', () => {
       const panel = document.getElementById(button.dataset.target || '');
       if (!panel) {
@@ -702,10 +689,10 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
         .map(
           (row) => `
           <tr>
-            <td class="col-rank">第${row.rank}名</td>
-            <td class="col-company">${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer" class="cell-ellipsis" title="${escapeHtml(row.companyName)}">${escapeHtml(truncateText(row.companyName, 24))}</a>` : renderEllipsisCell(row.companyName, 24)}</td>
-            <td class="col-main">${renderEllipsisCell(row.mainProducts, 22)}</td>
-            <td class="col-category">${renderEllipsisCell(row.platformCategory || row.categoryName || '-', 24)}</td>
+            <td>第${row.rank}名</td>
+            <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
+            <td class="col-main">${escapeHtml(row.mainProducts)}</td>
+            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -723,10 +710,10 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
           <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。</p>
           ${totalHint}
-          <table class="report-table table-balanced">
+          <table class="report-table">
             <thead>
               <tr>
-                <th class="col-rank">排名</th><th class="col-company">公司</th><th class="col-main">主营</th><th class="col-category">类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th><th>查全店询盘</th>
               </tr>
             </thead>
@@ -760,10 +747,10 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
         .map(
           (row) => `
           <tr>
-            <td class="col-rank">第${row.rank}名</td>
-            <td class="col-company">${renderEllipsisCell(row.companyName, 24)}</td>
-            <td class="col-main">${renderEllipsisCell(row.mainProducts, 22)}</td>
-            <td class="col-category">${renderEllipsisCell(row.platformCategory || row.categoryName || '-', 24)}</td>
+            <td>第${row.rank}名</td>
+            <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
+            <td class="col-main">${escapeHtml(row.mainProducts)}</td>
+            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -779,10 +766,10 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
         <section class="report-section">
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
           <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。PDF 仅导出当前类目前 20 名同行。</p>
-          <table class="report-table table-balanced">
+          <table class="report-table">
             <thead>
               <tr>
-                <th class="col-rank">排名</th><th class="col-company">公司</th><th class="col-main">主营</th><th class="col-category">类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th>
               </tr>
             </thead>
@@ -1410,6 +1397,40 @@ function extractShopInquiryPrefix(serverMessage) {
   return serverMessage.slice(0, idx).replace(/[；;]\s*$/, '').trim();
 }
 
+function buildShopInquiryPublicMessage(prefixNotes) {
+  let message = '已生成指定同行询盘分布';
+  const prefix = extractShopInquiryPrefix(prefixNotes) || String(prefixNotes || '').trim();
+  if (prefix && !prefix.includes('已生成指定同行询盘分布')) {
+    message = `${prefix}；${message}`;
+  }
+  return message;
+}
+
+function buildTop20PreviewMeta(result, searchPageCount, timings) {
+  if (!isAdminUser()) {
+    return result.message || '报告已生成';
+  }
+  const timingSummary = formatTop20TimingsSummary(timings);
+  return timingSummary
+    ? `${result.message} · 抓取 ${searchPageCount} 页 · ${timingSummary}`
+    : `${result.message} · 抓取 ${searchPageCount} 页`;
+}
+
+function buildCachePreviewMeta({ createdAt, createdBy, timingSummary, incomplete = false }) {
+  if (!isAdminUser()) {
+    const base = incomplete ? '缓存报告（不完整）' : '缓存报告';
+    return createdAt ? `${base} · ${formatTime(createdAt)}` : base;
+  }
+  let meta = `缓存报告 · ${formatTime(createdAt)} · ${createdBy}`;
+  if (incomplete) {
+    meta += ' · 不完整';
+  }
+  if (timingSummary) {
+    meta += ` · ${timingSummary}`;
+  }
+  return meta;
+}
+
 function buildShopInquiryStatusMessage(prefixNotes, { timings, stats, productsPerCategory, categoryCount } = {}) {
   const platformCount =
     categoryCount ?? timings?.platformLeafCategories ?? stats?.platformLeafCategories;
@@ -1639,14 +1660,12 @@ async function runTop20Report() {
     showPreview({
       type: 'top20',
       title: result.title,
-      message: timingSummary
-        ? `${result.message} · 抓取 ${searchPageCount} 页 · ${timingSummary}`
-        : `${result.message} · 抓取 ${searchPageCount} 页`,
+      message: buildTop20PreviewMeta(result, searchPageCount, timings),
       html: result.html,
       reports: result.reports,
       rawData,
     });
-    setLine(top20Status, timingSummary ? `报告生成成功 · ${timingSummary}` : '报告生成成功', 'success');
+    setLine(top20Status, '报告生成成功', 'success');
     state.pendingCaptchaRetry = null;
   } catch (error) {
     if (!isCaptchaPendingError(error)) {
@@ -2005,13 +2024,15 @@ cacheTableBody.addEventListener('click', async (event) => {
           categoryCount: item.payload?.categories?.length,
         },
       );
-      const cacheMeta = `缓存报告 · ${formatTime(item.createdAt)} · ${item.createdBy}${
-        item.status === 'incomplete' ? ' · 不完整' : ''
-      }`;
+      const cacheMeta = buildCachePreviewMeta({
+        createdAt: item.createdAt,
+        createdBy: item.createdBy,
+        incomplete: item.status === 'incomplete',
+      });
       showPreview({
         type: 'shop-inquiry',
         title: item.title,
-        message: statusSummary ? `${cacheMeta} · ${statusSummary}` : cacheMeta,
+        message: isAdminUser() && statusSummary ? `${cacheMeta} · ${statusSummary}` : cacheMeta,
         html: item.html,
         shopPayload: {
           shopUrl: item.payload?.shopUrl,
@@ -2024,9 +2045,11 @@ cacheTableBody.addEventListener('click', async (event) => {
       showPreview({
         type: 'top20',
         title: item.title,
-        message: timingSummary
-          ? `缓存报告 · ${formatTime(item.createdAt)} · ${item.createdBy} · ${timingSummary}`
-          : `缓存报告 · ${formatTime(item.createdAt)} · ${item.createdBy}`,
+        message: buildCachePreviewMeta({
+          createdAt: item.createdAt,
+          createdBy: item.createdBy,
+          timingSummary,
+        }),
         html: item.html,
         reports: item.reports,
       });
@@ -2225,7 +2248,6 @@ function initAppAfterLogin() {
   if (isAdminUser()) {
     configureAccountFormAccess({ editing: false });
   }
-  bindAdvancedPanels();
   listenForExtensionIdMessage();
   syncExtensionInfoFromServer().then(() => probeExtension());
   startExtensionInfoSync();

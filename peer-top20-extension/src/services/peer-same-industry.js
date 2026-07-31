@@ -301,10 +301,6 @@ function buildCategoryGroups(records) {
     .reverse();
 }
 
-function resetState() {
-  keywordSearchResult = [];
-}
-
 function mergeCompareResults(supplierMap, compareProductData) {
   for (const item of compareProductData) {
     const supplierId = item.compareCompanyView?.supplierId;
@@ -400,7 +396,7 @@ async function resolveProductCategories(items, onProgress) {
 }
 
 export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH_PAGE_COUNT, onProgress = () => {} }) {
-  resetState();
+  keywordSearchResult = [];
   const pageCount = normalizeSearchPageCount(searchPageCount);
   const timings = createTimings(pageCount);
   const totalStartedAt = Date.now();

@@ -301,6 +301,10 @@ function buildCategoryGroups(records) {
     .reverse();
 }
 
+function resetState() {
+  keywordSearchResult = [];
+}
+
 function mergeCompareResults(supplierMap, compareProductData) {
   for (const item of compareProductData) {
     const supplierId = item.compareCompanyView?.supplierId;

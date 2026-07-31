@@ -12,7 +12,6 @@ const DEFAULT_SEARCH_PAGE_COUNT = 5;
 const COMPARE_BATCH_SIZE = 20;
 const COMPARE_CONCURRENCY = 2;
 const TOP_COUNT = 20;
-const TOP20_DETAIL_CONCURRENCY = 10;
 const TOP20_DETAIL_DELAY_MS = 150;
 const TOP20_DETAIL_VERIFY_URL = 'https://www.alibaba.com/detail/compareProducts.html';
 
@@ -350,49 +349,95 @@ async function fetchAllCompareItems(productIds, timings, onProgress) {
   return Array.from(supplierMap.values());
 }
 
-async function resolveProductCategories(items, onProgress) {
-  const categories = new Array(items.length).fill(null);
-  let completed = 0;
-
-  await mapWithConcurrency(
-    items.map((_, index) => index),
-    TOP20_DETAIL_CONCURRENCY,
-    async (index) => {
-      const compareProductView = items[index].compareProductView || {};
-      const productDetailUrl = buildProductDetailUrl(
-        compareProductView.productId,
-        compareProductView.productDetailUrl || compareProductView.detailUrl,
-      );
-      if (!productDetailUrl) {
-        completed += 1;
-        return null;
-      }
-
-      try {
-        const categoryInfo = await fetchProductDetailCategory(productDetailUrl, {
-          verifyUrl: TOP20_DETAIL_VERIFY_URL,
-          productId: compareProductView.productId,
-        });
-        categories[index] = categoryInfo;
-        return categoryInfo;
-      } catch (error) {
-        if (error instanceof CaptchaError) {
-          throw error;
-        }
-        console.warn('[Peer Top20] product category failed:', error);
-        return null;
-      } finally {
-        completed += 1;
-        onProgress(
-          86 + Math.round((completed / items.length) * 10),
-          `正在解析产品类目（${completed}/${items.length}）…`,
-        );
-      }
-    },
-    TOP20_DETAIL_DELAY_MS,
+async function fetchItemCategoryInfo(item) {
+  const compareProductView = item.compareProductView || {};
+  const productDetailUrl = buildProductDetailUrl(
+    compareProductView.productId,
+    compareProductView.productDetailUrl || compareProductView.detailUrl,
   );
+  if (!productDetailUrl) {
+    return null;
+  }
 
-  return categories;
+  try {
+    return await fetchProductDetailCategory(productDetailUrl, {
+      verifyUrl: TOP20_DETAIL_VERIFY_URL,
+      productId: compareProductView.productId,
+    });
+  } catch (error) {
+    if (error instanceof CaptchaError) {
+      throw error;
+    }
+    console.warn('[Peer Top20] product category failed:', error);
+    return null;
+  }
+}
+
+function findLargestCategoryKey(categoryGroups) {
+  let targetCategory = null;
+  let maxLen = 0;
+  for (const [key, peers] of categoryGroups) {
+    if (peers.length > maxLen) {
+      maxLen = peers.length;
+      targetCategory = key;
+    }
+  }
+  return targetCategory;
+}
+
+async function resolveCategoriesUntilFullCategory(items, onProgress) {
+  const categoryGroups = new Map();
+  let parsedCount = 0;
+  let successCount = 0;
+  let winningCategory = null;
+
+  for (const item of items) {
+    const categoryInfo = await fetchItemCategoryInfo(item);
+    parsedCount += 1;
+    if (categoryInfo) {
+      successCount += 1;
+    }
+
+    const record = toIndustryData(item, categoryInfo);
+    const key = resolveCategoryKey(record);
+    if (!categoryGroups.has(key)) {
+      categoryGroups.set(key, []);
+    }
+    categoryGroups.get(key).push(record);
+
+    if (categoryGroups.get(key).length >= TOP_COUNT) {
+      winningCategory = key;
+    }
+
+    onProgress(
+      86 + Math.min(10, Math.round((parsedCount / items.length) * 10)),
+      winningCategory
+        ? `「${winningCategory}」已凑满 ${TOP_COUNT} 个同行，停止解析类目`
+        : `正在按询盘顺序解析类目（${parsedCount}/${items.length}）…`,
+    );
+
+    if (winningCategory) {
+      break;
+    }
+
+    if (TOP20_DETAIL_DELAY_MS > 0 && parsedCount < items.length) {
+      await new Promise((resolve) => setTimeout(resolve, TOP20_DETAIL_DELAY_MS));
+    }
+  }
+
+  const targetCategory = winningCategory || findLargestCategoryKey(categoryGroups);
+  const peers = sortRecordsByInquiry(categoryGroups.get(targetCategory) || []).slice(0, TOP_COUNT);
+  const effectDataCategoryGrouped = targetCategory
+    ? [{ key: targetCategory, category: targetCategory, value: peers }]
+    : [];
+
+  return {
+    effectData: peers,
+    effectDataCategoryGrouped,
+    detailParsed: parsedCount,
+    detailSuccess: successCount,
+    winningCategory: targetCategory,
+  };
 }
 
 export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH_PAGE_COUNT, onProgress = () => {} }) {
@@ -431,24 +476,22 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
 
   totalResult.sort(sortByInquiry);
 
-  onProgress(86, `正在解析 ${totalResult.length} 个 compare 产品类目…`);
+  onProgress(86, `共 ${totalResult.length} 个 compare 结果，按询盘顺序解析类目…`);
   const detailStartedAt = Date.now();
-  const categoryResults = await resolveProductCategories(totalResult, onProgress);
+  const categoryOutcome = await resolveCategoriesUntilFullCategory(totalResult, onProgress);
   timings.detailMs = Date.now() - detailStartedAt;
-  timings.detailCandidates = totalResult.length;
-  timings.detailSuccess = categoryResults.filter(Boolean).length;
+  timings.detailCandidates = categoryOutcome.detailParsed;
+  timings.detailSuccess = categoryOutcome.detailSuccess;
 
   onProgress(96, '正在整理同行数据…');
   const rankStartedAt = Date.now();
-  const allEffectData = totalResult.map((item, index) => toIndustryData(item, categoryResults[index]));
-  const effectDataCategoryGrouped = buildCategoryGroups(allEffectData);
-  const effectData = sortRecordsByInquiry(allEffectData).slice(0, TOP_COUNT);
+  const { effectData, effectDataCategoryGrouped, winningCategory } = categoryOutcome;
   timings.rankMs = Date.now() - rankStartedAt;
   timings.totalMs = Date.now() - totalStartedAt;
 
   onProgress(100, '抓取完成');
   console.log(
-    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批，供应商 ${timings.uniqueSuppliers} 家，类目 ${timings.detailSuccess}/${timings.detailCandidates}，耗时 ${timings.totalMs}ms`,
+    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批，供应商 ${timings.uniqueSuppliers} 家，类目解析 ${timings.detailSuccess}/${timings.detailCandidates}，报告类目「${winningCategory || '-'}」${effectData.length} 家，耗时 ${timings.totalMs}ms`,
     timings,
   );
   if (effectData[0]) {

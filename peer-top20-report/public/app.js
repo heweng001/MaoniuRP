@@ -504,7 +504,7 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
     setLine(shopStatus, `${normalized.correctionHint}；正在查询（每分组 ${getShopProductsPerCategory()} 个产品 ID）...`);
   } else {
     showReportGenerating(getShopGeneratingMessage());
-    setLine(shopStatus, `插件正在查询店铺类目询盘（每分组 ${getShopProductsPerCategory()} 个产品 ID）...`);
+    setLine(shopStatus, `插件正在查询店铺类目询盘（参数${getShopProductsPerCategory()}）...`);
   }
 
   const productsPerCategory = getShopProductsPerCategory();
@@ -1626,7 +1626,7 @@ async function runTop20Report() {
   setGeneratingBusy(true);
   const searchPageCount = getTop20SearchPageCount();
   showReportGenerating(getTop20GeneratingMessage(searchPageCount), '正在抓取数据');
-  setLine(top20Status, `插件正在抓取数据（每关键词 ${searchPageCount} 页）...`);
+  setLine(top20Status, `插件正在抓取数据（参数${searchPageCount}）...`);
   const startedAt = Date.now();
   try {
     const pluginStartedAt = Date.now();

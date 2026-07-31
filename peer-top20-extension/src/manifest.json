@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI操盘手-重制版",
-  "version": "1.3.20",
+  "version": "1.3.21",
   "description": "为 AI操盘手-重制版 采集阿里巴巴同行数据",  "permissions": ["cookies", "storage", "tabs"],
   "host_permissions": [
     "*://*.alibaba.com/*",

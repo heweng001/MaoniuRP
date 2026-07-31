@@ -59,6 +59,24 @@ function resolvePlatformCategory(record) {
   return '-';
 }
 
+function buildListedProductRow(product) {
+  const pageViews = parseToNumber(product.pageViews);
+  const inquiries = parseToNumber(product.iquiries);
+  let inquiryRate = 'N/A';
+  if (!Number.isNaN(pageViews) && pageViews > 0 && !Number.isNaN(inquiries)) {
+    inquiryRate = `${((inquiries / pageViews) * 100).toFixed(2)}%`;
+  }
+  return {
+    productId: String(product.productId || ''),
+    mainProducts: unescapeHtml(product.mainProducts || ''),
+    platformCategory: unescapeHtml(product.platformCategory || '-'),
+    pageViews: String(product.pageViews || ''),
+    inquiries: String(product.iquiries || ''),
+    inquiryRate,
+    productDetailUrl: String(product.productDetailUrl || ''),
+  };
+}
+
 export function buildPeerRow(record, rank) {
   const pageViews = parseToNumber(record.pageViews);
   const inquiries = parseToNumber(record.iquiries);
@@ -80,6 +98,10 @@ export function buildPeerRow(record, rank) {
     transactionPrice: String(record.transactionPrice || ''),
     displayStarLevel: String(record.displayStarLevel || ''),
     supplierYear: String(record.supplierYear || ''),
+    listedProductCount: Number(record.listedProductCount) || 1,
+    listedProducts: Array.isArray(record.listedProducts)
+      ? record.listedProducts.map(buildListedProductRow)
+      : [],
   };
 }
 

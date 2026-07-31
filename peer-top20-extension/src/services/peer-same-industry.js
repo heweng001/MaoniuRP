@@ -12,7 +12,7 @@ import {
 const DEFAULT_SEARCH_PAGE_COUNT = 5;
 const COMPARE_BATCH_SIZE = 20;
 const COMPARE_CONCURRENCY = 2;
-const TOP_PRODUCT_COUNT = 100;
+const INQUIRY_THRESHOLD = 50;
 const TOP20_DETAIL_CONCURRENCY = 10;
 const TOP20_DETAIL_DELAY_MS = 150;
 const DETAIL_PARSE_MAX_RETRIES = 2;
@@ -242,6 +242,7 @@ function toIndustryData(item, categoryInfo = null) {
     iquiries,
     pageViews,
     mainProducts,
+    productId: String(productId || ''),
     home: item.compareCompanyView.companyUrl,
     productDetailUrl: item.compareProductView.productDetailUrl,
     category: '全部',
@@ -286,6 +287,38 @@ function resolveCategoryKey(record) {
   return categoryName || '未分类';
 }
 
+function buildListedProductSnapshot(record) {
+  return {
+    productId: String(record.productId || ''),
+    mainProducts: String(record.mainProducts || ''),
+    platformCategory: String(record.platformCategory || '-'),
+    pageViews: String(record.pageViews || ''),
+    iquiries: String(record.iquiries || ''),
+    productDetailUrl: String(record.productDetailUrl || ''),
+  };
+}
+
+function groupRecordsByCompany(records) {
+  const map = new Map();
+  for (const record of records) {
+    const company = String(record.companyName || '').trim() || '未知公司';
+    if (!map.has(company)) {
+      map.set(company, []);
+    }
+    map.get(company).push(record);
+  }
+
+  return sortRecordsByInquiry(
+    [...map.values()].map((products) => {
+      const sorted = sortRecordsByInquiry(products);
+      const primary = { ...sorted[0] };
+      primary.listedProducts = sorted.map(buildListedProductSnapshot);
+      primary.listedProductCount = sorted.length;
+      return primary;
+    }),
+  );
+}
+
 function buildCategoryGroups(records) {
   const groups = new Map();
   for (const record of records) {
@@ -300,7 +333,7 @@ function buildCategoryGroups(records) {
     .map(([category, value]) => ({
       key: category,
       category,
-      value: sortRecordsByInquiry(value),
+      value: groupRecordsByCompany(value),
     }))
     .sort((a, b) => getRecordInquiry(a.value[0]) - getRecordInquiry(b.value[0]))
     .reverse();
@@ -459,20 +492,6 @@ async function resolveProductCategories(items, onProgress) {
   };
 }
 
-function dedupeByCompanyAndCategory(records) {
-  const map = new Map();
-  for (const record of records) {
-    const company = String(record.companyName || '').trim();
-    const category = resolveCategoryKey(record);
-    const key = `${company}\0${category}`;
-    const existing = map.get(key);
-    if (!existing || getRecordInquiry(record) > getRecordInquiry(existing)) {
-      map.set(key, record);
-    }
-  }
-  return sortRecordsByInquiry([...map.values()]);
-}
-
 export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH_PAGE_COUNT, onProgress = () => {} }) {
   keywordSearchResult = [];
   const pageCount = normalizeSearchPageCount(searchPageCount);
@@ -506,32 +525,40 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
   }
 
   const allCompareResults = await fetchAllCompareProducts(productIds, timings, onProgress);
-  allCompareResults.sort(sortByInquiry);
-  const topProducts = allCompareResults.slice(0, TOP_PRODUCT_COUNT);
+  const highInquiryProducts = allCompareResults.filter(
+    (item) => getInquiryNumber(item) > INQUIRY_THRESHOLD,
+  );
 
-  onProgress(86, `已选询盘最高的 ${topProducts.length} 个产品，十路并发解析类目…`);
+  onProgress(
+    86,
+    `已筛选询盘>${INQUIRY_THRESHOLD}的 ${highInquiryProducts.length} 个产品，十路并发解析类目…`,
+  );
   const detailStartedAt = Date.now();
-  const categoryOutcome = await resolveProductCategories(topProducts, onProgress);
+  const categoryOutcome = await resolveProductCategories(highInquiryProducts, onProgress);
   timings.detailMs = Date.now() - detailStartedAt;
-  timings.detailCandidates = topProducts.length;
+  timings.detailCandidates = highInquiryProducts.length;
   timings.detailSuccess = categoryOutcome.detailSuccess;
   timings.detailFailed = categoryOutcome.detailFailed;
   timings.detailRetryRounds = categoryOutcome.detailRetryRounds;
+  timings.inquiryThreshold = INQUIRY_THRESHOLD;
+  timings.highInquiryProductCount = highInquiryProducts.length;
 
   onProgress(96, '正在整理同行数据…');
   const rankStartedAt = Date.now();
-  const parsedRecords = topProducts.map((item, index) =>
+  const parsedRecords = highInquiryProducts.map((item, index) =>
     toIndustryData(item, categoryOutcome.categories[index]),
   );
-  const effectData = dedupeByCompanyAndCategory(parsedRecords);
-  const effectDataCategoryGrouped = buildCategoryGroups(effectData);
+  const effectDataCategoryGrouped = buildCategoryGroups(parsedRecords);
+  const effectData = effectDataCategoryGrouped.flatMap((group) => group.value);
   const scrapingStats = {
     compareBatches: timings.compareBatches,
     compareBatchFailures: timings.compareBatchFailures,
-    detailCandidates: topProducts.length,
+    detailCandidates: highInquiryProducts.length,
     detailSuccess: categoryOutcome.detailSuccess,
     detailFailed: categoryOutcome.detailFailed,
     detailRetryRounds: categoryOutcome.detailRetryRounds,
+    inquiryThreshold: INQUIRY_THRESHOLD,
+    highInquiryProductCount: highInquiryProducts.length,
     isComplete: timings.compareBatchFailures === 0 && categoryOutcome.detailFailed === 0,
   };
   timings.isComplete = scrapingStats.isComplete;
@@ -540,7 +567,7 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
 
   onProgress(100, '抓取完成');
   console.log(
-    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），Top${TOP_PRODUCT_COUNT} 类目解析 ${categoryOutcome.detailSuccess}/${topProducts.length}，报告 ${effectData.length} 家（去重后），完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
+    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），询盘>${INQUIRY_THRESHOLD} ${highInquiryProducts.length} 个，类目解析 ${categoryOutcome.detailSuccess}/${highInquiryProducts.length}，报告 ${effectData.length} 家公司，完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
     timings,
     scrapingStats,
   );

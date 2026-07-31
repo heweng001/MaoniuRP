@@ -84,6 +84,9 @@ const downloadExcelBtn = document.getElementById('downloadExcelBtn');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
 const top20CategoryFilterWrap = document.getElementById('top20CategoryFilterWrap');
 const top20CategoryFilter = document.getElementById('top20CategoryFilter');
+const listedProductsModal = document.getElementById('listedProductsModal');
+const listedProductsModalTitle = document.getElementById('listedProductsModalTitle');
+const listedProductsModalBody = document.getElementById('listedProductsModalBody');
 
 const PDF_FOOTER_TEXT = '本报告数据由ai操盘手提供，如对报告数据有疑问可加微信 maoniuchaoren。';
 let generatingTimer = null;
@@ -678,6 +681,70 @@ function refreshTop20Preview() {
     );
 }
 
+function renderTop20CompanyCell(row, keyword, categoryName, { forPdf = false } = {}) {
+  const companyLabel = escapeHtml(row.companyName);
+  const nameHtml = row.home
+    ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${companyLabel}</a>`
+    : companyLabel;
+  const count = Number(row.listedProductCount) || 1;
+  if (forPdf) {
+    return count > 1 ? `${nameHtml} (${count})` : nameHtml;
+  }
+  if (count <= 1 || !row.listedProducts?.length) {
+    return `<span class="company-cell">${nameHtml}</span>`;
+  }
+  return `<span class="company-cell">${nameHtml}<button type="button" class="product-count-badge" data-listed-keyword="${escapeHtml(keyword)}" data-listed-category="${escapeHtml(categoryName)}" data-listed-company="${escapeHtml(row.companyName)}" title="查看 ${count} 个上榜产品">${count}</button></span>`;
+}
+
+function findListedProducts(keyword, categoryName, companyName) {
+  const report = state.preview.reports?.find((item) => item.keyword === keyword);
+  const category = report?.categories?.find((item) => item.category === categoryName);
+  const row = category?.rows?.find((item) => item.companyName === companyName);
+  return row?.listedProducts || [];
+}
+
+function showListedProductsModal(keyword, categoryName, companyName) {
+  const products = findListedProducts(keyword, categoryName, companyName);
+  if (!products.length) {
+    return;
+  }
+  listedProductsModalTitle.textContent = `${companyName} · 上榜产品 ${products.length} 个`;
+  listedProductsModalBody.innerHTML = `
+    <table class="report-table listed-products-table">
+      <thead>
+        <tr>
+          <th>主营产品</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th><th>产品链接</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${products
+          .map(
+            (product) => `
+          <tr>
+            <td class="col-main">${escapeHtml(product.mainProducts)}</td>
+            <td>${escapeHtml(product.platformCategory || '-')}</td>
+            <td>${escapeHtml(product.pageViews)}</td>
+            <td>${escapeHtml(product.inquiries)}</td>
+            <td>${escapeHtml(product.inquiryRate)}</td>
+            <td>${product.productDetailUrl ? `<a href="${escapeHtml(product.productDetailUrl)}" target="_blank" rel="noreferrer">查看</a>` : '-'}</td>
+          </tr>`,
+          )
+          .join('')}
+      </tbody>
+    </table>`;
+  listedProductsModal?.classList.remove('hidden');
+}
+
+function hideListedProductsModal() {
+  listedProductsModal?.classList.add('hidden');
+}
+
+function bindListedProductsModal() {
+  document.querySelectorAll('[data-close-listed-products-modal="true"]').forEach((node) => {
+    node.addEventListener('click', () => hideListedProductsModal());
+  });
+}
+
 function renderTop20IncompleteBanner(incompleteNote = '') {
   return incompleteNote
     ? `<div class="incomplete-banner">⚠ ${escapeHtml(incompleteNote)}</div>`
@@ -698,7 +765,7 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
           (row) => `
           <tr>
             <td>第${row.rank}名</td>
-            <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
+            <td>${renderTop20CompanyCell(row, report.keyword, category.category)}</td>
             <td class="col-main">${escapeHtml(row.mainProducts)}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
@@ -755,7 +822,7 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
           (row) => `
           <tr>
             <td>第${row.rank}名</td>
-            <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
+            <td>${renderTop20CompanyCell(row, report.keyword, category.category, { forPdf: true })}</td>
             <td class="col-main">${escapeHtml(row.mainProducts)}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
@@ -1698,6 +1765,17 @@ generateShopBtn.addEventListener('click', () => {
 });
 
 previewContent.addEventListener('click', (event) => {
+  const productBadge = event.target.closest('.product-count-badge');
+  if (productBadge?.dataset.listedCompany) {
+    event.preventDefault();
+    event.stopPropagation();
+    showListedProductsModal(
+      productBadge.dataset.listedKeyword,
+      productBadge.dataset.listedCategory,
+      productBadge.dataset.listedCompany,
+    );
+    return;
+  }
   const btn = event.target.closest('.shop-inquiry-btn');
   if (!btn?.dataset.shopUrl) return;
   event.preventDefault();
@@ -2259,6 +2337,7 @@ function initAppAfterLogin() {
   bindCacheFilters();
   bindCaptchaGuideModal();
   bindLoginGuideModal();
+  bindListedProductsModal();
   bindAdvancedPanels();
   if (isAdminUser()) {
     configureAccountFormAccess({ editing: false });

@@ -2,6 +2,7 @@ import { peerFetch } from 'common';
 import { getNested } from 'util/index';
 import { getCompareProductsData, CaptchaError } from './compare-products.js';
 import { mapWithConcurrency, SEARCH_CONCURRENCY } from './parallel-fetch.js';
+import { SCRAPE_MAX_RETRIES, SCRAPE_RETRY_DELAY_MS, sleep } from './scrape-retry.js';
 import {
   fetchProductDetailCategory as fetchProductDetailCategoryInfo,
 } from './product-detail-category.js';
@@ -333,10 +334,6 @@ function resolveCategoryPagePath(category, groupUrlByTitle = {}) {
   }
 
   return null;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function extractGroupUrlMapFromHtml(html) {
@@ -676,6 +673,35 @@ function captureCompareDebug(debugContext, payload) {
   console.log('[Peer Top20 debug] compareProducts field keys', payload.fieldKeys);
 }
 
+async function fetchCompareBatchWithRetry(batch, verifyUrl, debugContext, stats) {
+  let lastError;
+  for (let attempt = 0; attempt <= SCRAPE_MAX_RETRIES; attempt += 1) {
+    try {
+      stats.compareCalls += 1;
+      const listView = await getCompareProductsData(batch, {
+        verifyUrl,
+        onDebugSample: (payload) => captureCompareDebug(debugContext, payload),
+      });
+      if (!listView?.length) {
+        throw new Error('compareProducts 返回空数据');
+      }
+      stats.compareItems += listView.length;
+      return listView;
+    } catch (error) {
+      if (error instanceof CaptchaError) {
+        throw error;
+      }
+      lastError = error;
+      if (attempt < SCRAPE_MAX_RETRIES) {
+        await sleep(SCRAPE_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+  stats.compareErrors += 1;
+  console.warn('[Peer Top20] compare products failed after retries:', lastError);
+  return null;
+}
+
 async function fetchAllCompareItems(productIds, verifyUrl, debugContext, stats, timings) {
   const batches = partition(productIds, COMPARE_BATCH_SIZE);
   timings.compareBatches = batches.length;
@@ -686,26 +712,26 @@ async function fetchAllCompareItems(productIds, verifyUrl, debugContext, stats, 
     const batchGroup = batches.slice(index, index + COMPARE_CONCURRENCY);
     const batchResults = await Promise.all(
       batchGroup.map(async (batch) => {
-        stats.compareCalls += 1;
         try {
-          const listView = await getCompareProductsData(batch, {
-            verifyUrl,
-            onDebugSample: (payload) => captureCompareDebug(debugContext, payload),
-          });
-          stats.compareItems += listView.length;
+          const listView = await fetchCompareBatchWithRetry(batch, verifyUrl, debugContext, stats);
+          if (!listView) {
+            timings.compareBatchFailures += 1;
+          }
           return listView;
         } catch (error) {
-          stats.compareErrors += 1;
-          timings.compareBatchFailures += 1;
           if (error instanceof CaptchaError) {
             throw error;
           }
-          console.warn('[Peer Top20] compare products failed:', error);
-          return [];
+          timings.compareBatchFailures += 1;
+          return null;
         }
       }),
     );
-    allItems.push(...batchResults.flat());
+    for (const listView of batchResults) {
+      if (listView?.length) {
+        allItems.push(...listView);
+      }
+    }
   }
 
   timings.compareMs = Date.now() - compareStartedAt;
@@ -800,13 +826,15 @@ async function resolveHighInquiryCategories(compareItems, verifyUrl, stats, debu
   return outcomes.filter(Boolean);
 }
 
-function evaluateDetailParseCompleteness(stats, merged) {
+function evaluateDetailParseCompleteness(stats, merged, timings = {}) {
   const candidates = Number(stats.compareCandidates) || 0;
   const success = Number(stats.detailSuccess) || 0;
   stats.platformLeafCategories = merged.length;
   stats.detailFailed = Math.max(0, candidates - success);
   stats.parseSuccessRate = candidates > 0 ? success / candidates : 1;
-  stats.isComplete = candidates === 0 || success >= candidates;
+  const compareComplete =
+    (Number(timings.compareBatchFailures) || 0) === 0 && (Number(stats.compareErrors) || 0) === 0;
+  stats.isComplete = compareComplete && (candidates === 0 || success >= candidates);
   return stats.isComplete;
 }
 
@@ -995,7 +1023,7 @@ export async function queryShopCategoryInquiries(shopUrlInput, options = {}) {
     throw new Error(message);
   }
 
-  const isComplete = evaluateDetailParseCompleteness(stats, merged);
+  const isComplete = evaluateDetailParseCompleteness(stats, merged, timings);
 
   return {
     shopUrl,

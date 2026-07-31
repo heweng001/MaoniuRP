@@ -21,6 +21,7 @@ import { getExtensionInfo, streamExtensionZip, watchExtensionBuild } from './ext
 import { normalizeAlibabaShopUrl } from './shopUrl.js';
 import { parseKeywordsInput } from './mockData.js';
 import { createReportFromInput } from './reportService.js';
+import { buildShopInquiryIncompleteNote, buildTop20IncompleteNote } from './reportIncomplete.js';
 import { buildShopInquiryTitle, generateShopInquiryHtml } from './shopInquiryReport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -185,6 +186,8 @@ app.post('/api/reports/top20', async (req, res) => {
     const report = await createReportFromInput(input, options);
     const serverRenderMs = Date.now() - serverRenderStartedAt;
     const pluginTimings = req.body?.timings || req.body?.rawData?.timings || null;
+    const scrapeStats = req.body?.scrapeStats || pluginTimings || null;
+    const isComplete = req.body?.isComplete ?? scrapeStats?.isComplete ?? true;
     const timings = pluginTimings
       ? {
           ...pluginTimings,
@@ -192,26 +195,36 @@ app.post('/api/reports/top20', async (req, res) => {
           serverMs: Number(req.body?.serverMs) || serverRenderMs,
           pluginMs: Number(req.body?.pluginMs) || pluginTimings.totalMs || 0,
           totalMs: Number(req.body?.durationMs) || Date.now() - startedAt,
+          isComplete,
         }
       : {
           serverRenderMs,
           serverMs: Number(req.body?.serverMs) || serverRenderMs,
           totalMs: Number(req.body?.durationMs) || Date.now() - startedAt,
+          isComplete,
         };
+    const reportStatus = isComplete ? 'success' : 'incomplete';
+    const incompleteNote = reportStatus === 'incomplete' ? buildTop20IncompleteNote(scrapeStats) : '';
+    const baseMessage = `已生成 Top 同行报告（${keywordList.length} 个关键词，抓取 ${searchPageCount} 页）`;
+    const statusMessage =
+      reportStatus === 'incomplete' ? `${incompleteNote}；${baseMessage}` : baseMessage;
     const cacheItem = await saveReportCache({
       title: report.title,
       type: REPORT_TYPES.TOP20,
       createdBy: req.user.username,
       targetObject: keywordList.join(', '),
       pluginVersion: req.body?.pluginVersion || '',
-      status: 'success',
+      status: reportStatus,
       durationMs: timings.totalMs,
+      errorMessage: incompleteNote,
       html: report.html,
       reports: report.reports,
       payload: {
         keywords: keywordList,
         searchPageCount,
         timings,
+        scrapeStats,
+        isComplete,
       },
     });
 
@@ -223,7 +236,9 @@ app.post('/api/reports/top20', async (req, res) => {
       reports: report.reports,
       html: report.html,
       timings,
-      message: `已生成 Top 同行报告（${keywordList.length} 个关键词，抓取 ${searchPageCount} 页）`,
+      status: reportStatus,
+      isComplete,
+      message: statusMessage,
     });
   } catch (error) {
     const failedKeywords = parseKeywordsInput(req.body?.keywordText);
@@ -284,10 +299,8 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
 
     const reportStatus = finalCategories.length ? (isComplete ? 'success' : 'incomplete') : 'failed';
     const incompleteNote =
-      reportStatus === 'incomplete' && scrapeStats?.compareCandidates
-        ? `平台类目解析不完整（${scrapeStats.detailSuccess}/${scrapeStats.compareCandidates} 个高询盘产品已成功解析${
-            scrapeStats.detailRetryRounds ? `，已重试 ${scrapeStats.detailRetryRounds} 轮` : ''
-          }）`
+      reportStatus === 'incomplete'
+        ? buildShopInquiryIncompleteNote(scrapeStats, scrapeTimings)
         : '';
 
     const serverStartedAt = Date.now();

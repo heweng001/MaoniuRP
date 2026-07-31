@@ -555,9 +555,8 @@ button, input, select, textarea {
 }
 .report-table th { background: #f9fafb; }
 .report-table .col-main {
-  max-width: 100px;
-  white-space: normal;
-  word-break: break-word;
+  min-width: 180px;
+  white-space: nowrap;
 }
 .row-actions {
   align-items: center;

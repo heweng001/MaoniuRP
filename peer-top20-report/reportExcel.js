@@ -5,7 +5,6 @@ const HEADERS = [
   '公司名称',
   '店铺链接',
   '主营产品',
-  '类目',
   '类目访问',
   '类目询盘',
   '询盘率',
@@ -46,11 +45,11 @@ function styleDataRow(row) {
 }
 
 function writeCategorySheet(sheet, keyword, category) {
-  sheet.mergeCells('A1:L1');
+  sheet.mergeCells('A1:K1');
   sheet.getCell('A1').value = `${category.category} 类目询盘同行 top 排行榜`;
   sheet.getCell('A1').font = { size: 14, bold: true };
 
-  sheet.mergeCells('A2:L2');
+  sheet.mergeCells('A2:K2');
   sheet.getCell('A2').value = `关键词：${keyword}`;
 
   const headerRow = sheet.getRow(4);
@@ -65,7 +64,6 @@ function writeCategorySheet(sheet, keyword, category) {
       row.companyName,
       row.home,
       row.mainProducts,
-      row.platformCategory,
       row.pageViews,
       row.inquiries,
       row.inquiryRate,
@@ -107,8 +105,7 @@ function writeCategorySheet(sheet, keyword, category) {
     { width: 8 },
     { width: 24 },
     { width: 28 },
-    { width: 24 },
-    { width: 28 },
+    { width: 32 },
     { width: 12 },
     { width: 12 },
     { width: 10 },

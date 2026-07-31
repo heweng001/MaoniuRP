@@ -17,7 +17,6 @@ function renderTable(category) {
           <td class="center">第${row.rank}名</td>
           <td class="center">${companyCell}</td>
           <td class="center col-main">${row.mainProducts}</td>
-          <td class="center">${row.platformCategory || '-'}</td>
           <td class="center">${row.pageViews}</td>
           <td class="center">${row.inquiries}</td>
           <td class="center">${row.inquiryRate}</td>
@@ -33,7 +32,7 @@ function renderTable(category) {
   const summary = category.summary;
   const summaryRow = `
     <tr class="summary-row">
-      <td class="center" colspan="4">同行平均统计</td>
+      <td class="center" colspan="3">同行平均统计</td>
       <td class="center">${summary.pageViews}</td>
       <td class="center">${summary.inquiries}</td>
       <td class="center">${summary.inquiryRate}</td>
@@ -51,7 +50,6 @@ function renderTable(category) {
           <th>排名</th>
           <th>公司名称</th>
           <th>主营产品</th>
-          <th>类目</th>
           <th>类目访问</th>
           <th>类目询盘</th>
           <th>询盘率</th>
@@ -108,7 +106,7 @@ export function generateHtmlReport(reports, { title, selectedCategory } = {}) {
     .note { color: #6b7280; font-size: 11px; line-height: 1.5; margin-bottom: 10px; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
     th, td { border: 1px solid #d1d5db; padding: 5px 6px; }
-    .col-main { max-width: 100px; white-space: normal; word-break: break-word; }
+    .col-main { min-width: 180px; white-space: nowrap; }
     th { background: #f3f4f6; font-weight: 600; }
     .center { text-align: center; }
     .summary-row { background: #fffbeb; font-weight: 600; }

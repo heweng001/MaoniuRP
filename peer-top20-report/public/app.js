@@ -670,10 +670,18 @@ function refreshTop20Preview() {
   if (state.preview.type !== 'top20' || !state.preview.reports?.length) {
     return;
   }
-  previewContent.innerHTML = renderTop20Preview(
-    state.preview.reports,
-    state.top20SelectedCategory,
-  );
+  previewContent.innerHTML =
+    renderTop20IncompleteBanner(state.preview.incompleteNote || '') +
+    renderTop20Preview(
+      state.preview.reports,
+      state.top20SelectedCategory,
+    );
+}
+
+function renderTop20IncompleteBanner(incompleteNote = '') {
+  return incompleteNote
+    ? `<div class="incomplete-banner">⚠ ${escapeHtml(incompleteNote)}</div>`
+    : '';
 }
 
 function renderTop20Preview(reports, selectedCategory = state.top20SelectedCategory) {
@@ -692,7 +700,6 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
             <td>第${row.rank}名</td>
             <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
             <td class="col-main">${escapeHtml(row.mainProducts)}</td>
-            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -713,14 +720,14 @@ function renderTop20Preview(reports, selectedCategory = state.top20SelectedCateg
           <table class="report-table">
             <thead>
               <tr>
-                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th><th>查全店询盘</th>
               </tr>
             </thead>
             <tbody>
               ${rows}
               <tr class="summary-row">
-                <td colspan="4">同行平均</td>
+                <td colspan="3">同行平均</td>
                 <td>${escapeHtml(summary.pageViews)}</td>
                 <td>${escapeHtml(summary.inquiries)}</td>
                 <td>${escapeHtml(summary.inquiryRate)}</td>
@@ -750,7 +757,6 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
             <td>第${row.rank}名</td>
             <td>${row.home ? `<a href="${escapeHtml(row.home)}" target="_blank" rel="noreferrer">${escapeHtml(row.companyName)}</a>` : escapeHtml(row.companyName)}</td>
             <td class="col-main">${escapeHtml(row.mainProducts)}</td>
-            <td>${escapeHtml(row.platformCategory || row.categoryName || '-')}</td>
             <td>${escapeHtml(row.pageViews)}</td>
             <td>${escapeHtml(row.inquiries)}</td>
             <td>${escapeHtml(row.inquiryRate)}</td>
@@ -769,14 +775,14 @@ function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20S
           <table class="report-table">
             <thead>
               <tr>
-                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>类目</th><th>访问</th><th>询盘</th><th>询盘率</th>
+                <th>排名</th><th>公司</th><th class="col-main">主营</th><th>访问</th><th>询盘</th><th>询盘率</th>
                 <th>订单量</th><th>订单额</th><th>星等级</th><th>年限</th>
               </tr>
             </thead>
             <tbody>
               ${rows}
               <tr class="summary-row">
-                <td colspan="4">同行平均</td>
+                <td colspan="3">同行平均</td>
                 <td>${escapeHtml(summary.pageViews)}</td>
                 <td>${escapeHtml(summary.inquiries)}</td>
                 <td>${escapeHtml(summary.inquiryRate)}</td>
@@ -1579,9 +1585,9 @@ function bindPreviewTree() {
   }
 }
 
-function showPreview({ type, title, message, html, reports, rawData, shopPayload }) {
+function showPreview({ type, title, message, html, reports, rawData, shopPayload, incompleteNote = '' }) {
   hideReportGenerating(false);
-  state.preview = { type, title, html, reports, rawData, shopPayload };
+  state.preview = { type, title, html, reports, rawData, shopPayload, incompleteNote };
   previewTitle.textContent = title;
   previewMeta.textContent = message;
   previewEmpty.classList.add('hidden');
@@ -1598,7 +1604,9 @@ function showPreview({ type, title, message, html, reports, rawData, shopPayload
     bindPreviewTree();
   } else if (type === 'top20' && reports?.length) {
     populateTop20CategoryFilter(reports);
-    previewContent.innerHTML = renderTop20Preview(reports, state.top20SelectedCategory);
+    previewContent.innerHTML =
+      renderTop20IncompleteBanner(incompleteNote) +
+      renderTop20Preview(reports, state.top20SelectedCategory);
   } else if (html) {
     previewContent.innerHTML = html;
   }
@@ -1647,6 +1655,8 @@ async function runTop20Report() {
         pluginMs,
         serverMs: 0,
         timings: rawData.timings || null,
+        scrapeStats: rawData.timings || null,
+        isComplete: rawData.timings?.isComplete ?? true,
       }),
     });
     const serverMs = Date.now() - serverStartedAt;
@@ -1657,6 +1667,9 @@ async function runTop20Report() {
       totalMs: Date.now() - startedAt,
     };
     const timingSummary = formatTop20TimingsSummary(timings);
+    const statusType = result.status === 'incomplete' ? 'warning' : 'success';
+    const incompleteNote =
+      result.status === 'incomplete' ? result.message?.split('；')[0] || '' : '';
     showPreview({
       type: 'top20',
       title: result.title,
@@ -1664,8 +1677,9 @@ async function runTop20Report() {
       html: result.html,
       reports: result.reports,
       rawData,
+      incompleteNote,
     });
-    setLine(top20Status, '报告生成成功', 'success');
+    setLine(top20Status, result.status === 'incomplete' ? '报告不完整' : '报告生成成功', statusType);
     state.pendingCaptchaRetry = null;
   } catch (error) {
     if (!isCaptchaPendingError(error)) {
@@ -2052,6 +2066,7 @@ cacheTableBody.addEventListener('click', async (event) => {
         }),
         html: item.html,
         reports: item.reports,
+        incompleteNote: item.status === 'incomplete' ? item.errorMessage || '' : '',
       });
     }
   } catch (error) {

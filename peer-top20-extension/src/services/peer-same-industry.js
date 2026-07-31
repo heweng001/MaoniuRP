@@ -2,6 +2,7 @@ import { peerFetch } from 'common';
 import { getNested } from 'util/index';
 import { getCompareProductsData, CaptchaError } from './compare-products.js';
 import { mapWithConcurrency, SEARCH_CONCURRENCY } from './parallel-fetch.js';
+import { SCRAPE_MAX_RETRIES, SCRAPE_RETRY_DELAY_MS, sleep } from './scrape-retry.js';
 import {
   fetchProductDetailCategory,
   formatCategoryDisplay,
@@ -14,6 +15,8 @@ const COMPARE_CONCURRENCY = 2;
 const TOP_PRODUCT_COUNT = 100;
 const TOP20_DETAIL_CONCURRENCY = 10;
 const TOP20_DETAIL_DELAY_MS = 150;
+const DETAIL_PARSE_MAX_RETRIES = 2;
+const DETAIL_RETRY_DELAY_MS = 600;
 const TOP20_DETAIL_VERIFY_URL = 'https://www.alibaba.com/detail/compareProducts.html';
 
 let keywordSearchResult = [];
@@ -36,6 +39,8 @@ function createTimings(searchPageCount = DEFAULT_SEARCH_PAGE_COUNT) {
     detailMs: 0,
     detailCandidates: 0,
     detailSuccess: 0,
+    detailFailed: 0,
+    detailRetryRounds: 0,
     rankMs: 0,
     totalMs: 0,
     uniqueProducts: 0,
@@ -301,6 +306,29 @@ function buildCategoryGroups(records) {
     .reverse();
 }
 
+async function fetchCompareBatchWithRetry(batch) {
+  let lastError;
+  for (let attempt = 0; attempt <= SCRAPE_MAX_RETRIES; attempt += 1) {
+    try {
+      const listView = await getCompareProductsData(batch);
+      if (!listView?.length) {
+        throw new Error('compareProducts 返回空数据');
+      }
+      return listView;
+    } catch (error) {
+      if (error instanceof CaptchaError) {
+        throw error;
+      }
+      lastError = error;
+      if (attempt < SCRAPE_MAX_RETRIES) {
+        await sleep(SCRAPE_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+  console.warn('[Peer Top20] compare batch failed after retries:', lastError);
+  return null;
+}
+
 async function fetchAllCompareProducts(productIds, timings, onProgress) {
   const batches = partition(productIds, COMPARE_BATCH_SIZE);
   timings.compareBatches = batches.length;
@@ -318,16 +346,22 @@ async function fetchAllCompareProducts(productIds, timings, onProgress) {
     const batchResults = await Promise.all(
       batchGroup.map(async (batch) => {
         try {
-          return await getCompareProductsData(batch);
+          return await fetchCompareBatchWithRetry(batch);
         } catch (error) {
+          if (error instanceof CaptchaError) {
+            throw error;
+          }
+          console.warn('[Peer Top20] compare batch failed after retries:', error);
           timings.compareBatchFailures += 1;
-          console.warn('[Peer Top20] compare batch failed:', error);
-          return [];
+          return null;
         }
       }),
     );
 
     for (const compareProductData of batchResults) {
+      if (!compareProductData?.length) {
+        continue;
+      }
       for (const item of compareProductData) {
         const productId = item?.compareProductView?.productId;
         if (!productId) {
@@ -375,28 +409,54 @@ async function fetchItemCategoryInfo(item) {
 
 async function resolveProductCategories(items, onProgress) {
   const categories = new Array(items.length).fill(null);
-  let completed = 0;
+  let detailRetryRounds = 0;
 
-  await mapWithConcurrency(
-    items.map((_, index) => index),
-    TOP20_DETAIL_CONCURRENCY,
-    async (index) => {
-      try {
-        const categoryInfo = await fetchItemCategoryInfo(items[index]);
-        categories[index] = categoryInfo;
-        return categoryInfo;
-      } finally {
-        completed += 1;
-        onProgress(
-          86 + Math.round((completed / items.length) * 10),
-          `正在解析产品类目（${completed}/${items.length}）…`,
-        );
-      }
-    },
-    TOP20_DETAIL_DELAY_MS,
-  );
+  async function fetchAt(index) {
+    if (categories[index]) {
+      return categories[index];
+    }
+    const categoryInfo = await fetchItemCategoryInfo(items[index]);
+    categories[index] = categoryInfo;
+    return categoryInfo;
+  }
 
-  return categories;
+  async function runPass(indices) {
+    await mapWithConcurrency(
+      indices,
+      TOP20_DETAIL_CONCURRENCY,
+      async (index) => {
+        await fetchAt(index);
+      },
+      TOP20_DETAIL_DELAY_MS,
+    );
+    const parsedCount = categories.filter(Boolean).length;
+    onProgress(
+      86 + Math.round((parsedCount / items.length) * 10),
+      `正在解析产品类目（${parsedCount}/${items.length}）…`,
+    );
+  }
+
+  await runPass(items.map((_, index) => index));
+
+  for (let retry = 0; retry < DETAIL_PARSE_MAX_RETRIES; retry += 1) {
+    const pending = categories
+      .map((category, index) => (category ? null : index))
+      .filter((index) => index !== null);
+    if (!pending.length) {
+      break;
+    }
+    detailRetryRounds += 1;
+    await sleep(DETAIL_RETRY_DELAY_MS * (retry + 1));
+    await runPass(pending);
+  }
+
+  const detailSuccess = categories.filter(Boolean).length;
+  return {
+    categories,
+    detailRetryRounds,
+    detailSuccess,
+    detailFailed: Math.max(0, items.length - detailSuccess),
+  };
 }
 
 function dedupeByCompanyAndCategory(records) {
@@ -451,25 +511,38 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
 
   onProgress(86, `已选询盘最高的 ${topProducts.length} 个产品，十路并发解析类目…`);
   const detailStartedAt = Date.now();
-  const categoryResults = await resolveProductCategories(topProducts, onProgress);
+  const categoryOutcome = await resolveProductCategories(topProducts, onProgress);
   timings.detailMs = Date.now() - detailStartedAt;
   timings.detailCandidates = topProducts.length;
-  timings.detailSuccess = categoryResults.filter(Boolean).length;
+  timings.detailSuccess = categoryOutcome.detailSuccess;
+  timings.detailFailed = categoryOutcome.detailFailed;
+  timings.detailRetryRounds = categoryOutcome.detailRetryRounds;
 
   onProgress(96, '正在整理同行数据…');
   const rankStartedAt = Date.now();
   const parsedRecords = topProducts.map((item, index) =>
-    toIndustryData(item, categoryResults[index]),
+    toIndustryData(item, categoryOutcome.categories[index]),
   );
   const effectData = dedupeByCompanyAndCategory(parsedRecords);
   const effectDataCategoryGrouped = buildCategoryGroups(effectData);
+  const scrapingStats = {
+    compareBatches: timings.compareBatches,
+    compareBatchFailures: timings.compareBatchFailures,
+    detailCandidates: topProducts.length,
+    detailSuccess: categoryOutcome.detailSuccess,
+    detailFailed: categoryOutcome.detailFailed,
+    detailRetryRounds: categoryOutcome.detailRetryRounds,
+    isComplete: timings.compareBatchFailures === 0 && categoryOutcome.detailFailed === 0,
+  };
+  timings.isComplete = scrapingStats.isComplete;
   timings.rankMs = Date.now() - rankStartedAt;
   timings.totalMs = Date.now() - totalStartedAt;
 
   onProgress(100, '抓取完成');
   console.log(
-    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条，Top${TOP_PRODUCT_COUNT} 类目解析 ${timings.detailSuccess}/${timings.detailCandidates}，报告 ${effectData.length} 家（去重后），耗时 ${timings.totalMs}ms`,
+    `[Peer Top20] ${normalizedKeyword}: ${pageCount}页产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），Top${TOP_PRODUCT_COUNT} 类目解析 ${categoryOutcome.detailSuccess}/${topProducts.length}，报告 ${effectData.length} 家（去重后），完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
     timings,
+    scrapingStats,
   );
   if (effectData[0]) {
     console.log('[Peer Top20] sample platformCategory:', effectData[0].platformCategory);
@@ -479,6 +552,7 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
     keyword: normalizedKeyword,
     effectData,
     effectDataCategoryGrouped,
+    scrapingStats,
     timings,
   };
 }
@@ -499,6 +573,8 @@ export function mergeTop20Timings(items = []) {
     merged.detailMs += item.timings.detailMs || 0;
     merged.detailCandidates += item.timings.detailCandidates || 0;
     merged.detailSuccess += item.timings.detailSuccess || 0;
+    merged.detailFailed += item.timings.detailFailed || 0;
+    merged.detailRetryRounds += item.timings.detailRetryRounds || 0;
     merged.rankMs += item.timings.rankMs || 0;
     merged.totalMs += item.timings.totalMs || 0;
     merged.uniqueProducts += item.timings.uniqueProducts || 0;
@@ -506,6 +582,10 @@ export function mergeTop20Timings(items = []) {
     merged.compareBatches += item.timings.compareBatches || 0;
     merged.compareBatchFailures += item.timings.compareBatchFailures || 0;
   }
+
+  merged.isComplete =
+    items.length > 0 &&
+    items.every((item) => item.scrapingStats?.isComplete !== false && item.timings?.isComplete !== false);
 
   return merged;
 }

@@ -309,7 +309,7 @@ function bindTop20SearchPageCount() {
 }
 
 function getTop20GeneratingMessage(searchPageCount = getTop20SearchPageCount()) {
-  return `插件正在抓取阿里巴巴数据（每关键词 ${searchPageCount} 页），通常需要 10–30 秒，请勿关闭页面`;
+  return `插件正在抓取阿里巴巴数据（参数${searchPageCount}），通常需要 10–30 秒，请勿关闭页面`;
 }
 
 function getShopProductsPerCategory() {
@@ -342,7 +342,7 @@ function bindShopProductsPerCategory() {
 }
 
 function getShopGeneratingMessage(productsPerCategory = getShopProductsPerCategory()) {
-  return `正在抓取 Profile 分类、特色产品与销量页（每分组 ${productsPerCategory} 个产品 ID），大店通常需 30–50 秒，请勿关闭页面`;
+  return `正在抓取 Profile 分类、特色产品与销量页（参数${productsPerCategory}），大店通常需 30–50 秒，请勿关闭页面`;
 }
 
 function resolvePrimaryVerificationUrl(response = {}) {

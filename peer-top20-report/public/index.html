@@ -65,18 +65,18 @@
           <div class="grid-2">
             <div class="card">
               <div class="card-head">
-                <h3>Top20 同行询盘榜</h3>
-                <p>输入关键词，通过 Chrome 插件抓取阿里巴巴同行 Top20 数据</p>
+                <h3>Top 同行询盘榜</h3>
+                <p>输入关键词，通过 Chrome 插件抓取阿里巴巴同行数据</p>
               </div>
               <label class="field compact">
                 <span>关键词（每行一个）</span>
                 <textarea id="top20Keywords" rows="4" placeholder="wireless charger&#10;bluetooth speaker"></textarea>
               </label>
               <label class="field compact">
-                <span>抓取页数</span>
+                <span>抓取参数</span>
                 <input id="top20SearchPageCount" type="number" min="1" max="20" step="1" value="5" />
                 <p id="top20SearchPageCountHint" class="field-hint">
-                  每个关键词抓取搜索结果页数，默认 5 页；页数越多数据越全，但耗时更长。
+                  可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
                 </p>
               </label>
               <div class="actions compact">
@@ -95,10 +95,10 @@
                 <input id="shopUrlInput" type="text" placeholder="https://example.en.alibaba.com" />
               </label>
               <label class="field compact">
-                <span>每分组产品 ID 数</span>
+                <span>抓取参数</span>
                 <input id="shopProductsPerCategory" type="number" min="1" max="20" step="1" value="2" />
                 <p id="shopProductsPerCategoryHint" class="field-hint">
-                  完整模式会抓取 Profile 各分类、特色产品与销量页；每个分组最多取指定数量的产品 ID，默认 2 个。
+                  可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。
                 </p>
               </label>
               <div class="actions compact">
@@ -115,6 +115,10 @@
                 <p id="previewMeta">生成报告后将在此显示</p>
               </div>
               <div id="previewActions" class="actions compact hidden">
+                <label id="top20CategoryFilterWrap" class="field compact inline hidden">
+                  <span>类目筛选</span>
+                  <select id="top20CategoryFilter"></select>
+                </label>
                 <button id="downloadHtmlBtn" type="button" class="btn secondary">下载 HTML</button>
                 <button id="downloadExcelBtn" type="button" class="btn secondary hidden">下载 Excel</button>
                 <button id="exportPdfBtn" type="button" class="btn ghost">导出 PDF</button>
@@ -153,7 +157,7 @@
                 <span>类型</span>
                 <select id="cacheFilterType">
                   <option value="">全部</option>
-                  <option value="top20">Top20同行报告</option>
+                  <option value="top20">Top同行报告</option>
                   <option value="shop-inquiry">指定同行报告</option>
                 </select>
               </label>
@@ -233,7 +237,10 @@
                   <h3>账号列表</h3>
                   <p id="accountsListDesc">支持增删改查</p>
                 </div>
-                <button id="refreshAccountsBtn" type="button" class="btn secondary">刷新</button>
+                <div class="actions compact">
+                  <button id="createAccountBtn" type="button" class="btn primary hidden">新建账号</button>
+                  <button id="refreshAccountsBtn" type="button" class="btn secondary">刷新</button>
+                </div>
               </div>
               <div class="table-wrap">
                 <table class="data-table">
@@ -253,6 +260,29 @@
             </div>
           </div>
         </section>
+      </div>
+    </div>
+
+    <div id="loginGuideModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-login-modal="true"></div>
+      <div class="modal-panel compact-modal login-guide-modal">
+        <div class="modal-head">
+          <h3>请先登录阿里巴巴国际站</h3>
+          <button type="button" class="btn ghost" data-close-login-modal="true">关闭</button>
+        </div>
+        <div class="modal-body compact-body">
+          <p id="loginGuideDesc" class="guide-desc login-guide-desc">
+            生成报告需要先登录阿里巴巴国际站，否则插件无法抓取同行数据。
+          </p>
+          <ol class="guide-list">
+            <li>点击下方按钮，在新窗口打开阿里巴巴登录页</li>
+            <li>使用你的阿里巴巴国际站账号完成登录</li>
+            <li>回到本页刷新后，再次点击「生成报告」</li>
+          </ol>
+          <div class="captcha-modal-actions">
+            <button id="loginGuideOpenBtn" type="button" class="btn primary">打开阿里巴巴登录页</button>
+          </div>
+        </div>
       </div>
     </div>
 

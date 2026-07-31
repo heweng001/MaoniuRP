@@ -119,11 +119,20 @@ export function buildSummary(records) {
 }
 
 export function buildCategoryGroup(category, records) {
-  const top20 = records.slice(0, 20);
+  const sorted = [...records].sort((a, b) => {
+    const left = parseToNumber(a.iquiries);
+    const right = parseToNumber(b.iquiries);
+    if (Number.isNaN(left) && Number.isNaN(right)) return 0;
+    if (Number.isNaN(left)) return 1;
+    if (Number.isNaN(right)) return -1;
+    return right - left;
+  });
+  const top20 = sorted.slice(0, 20);
   return {
     category,
-    rows: top20.map((record, index) => buildPeerRow(record, index + 1)),
+    rows: sorted.map((record, index) => buildPeerRow(record, index + 1)),
     summary: buildSummary(top20),
+    totalCount: sorted.length,
   };
 }
 

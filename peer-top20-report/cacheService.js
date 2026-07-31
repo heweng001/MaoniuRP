@@ -14,7 +14,7 @@ export const REPORT_TYPES = {
 };
 
 export const REPORT_TYPE_LABELS = {
-  [REPORT_TYPES.TOP20]: 'Top20同行报告',
+  [REPORT_TYPES.TOP20]: 'Top同行报告',
   [REPORT_TYPES.SHOP_INQUIRY]: '指定同行报告',
 };
 

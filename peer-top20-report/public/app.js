@@ -1,6 +1,9 @@
 const AUTH_TOKEN_KEY = 'ai-copilot-token';
 const DEFAULT_TOP20_SEARCH_PAGE_COUNT = 5;
 const DEFAULT_SHOP_PRODUCTS_PER_CATEGORY = 2;
+const SCRAPE_PARAM_HINT =
+  '可填 1–20，数值越大抓取可能越准确但速度会明显降低，一般建议按默认值即可。';
+const ALIBABA_LOGIN_URL = 'https://i.alibaba.com';
 const EXTENSION_ID_KEYS = ['peer-top20-extension-id', 'ai-plugin-id'];
 const EXTENSION_INFO_SYNC_MS = 15000;
 
@@ -25,6 +28,7 @@ const state = {
   cacheCollapsedGroups: new Set(),
   pendingCaptchaRetry: null,
   users: [],
+  top20SelectedCategory: '',
 };
 
 const loginView = document.getElementById('loginView');
@@ -42,6 +46,9 @@ const captchaGuideModal = document.getElementById('captchaGuideModal');
 const captchaGuideDesc = document.getElementById('captchaGuideDesc');
 const captchaOpenBtn = document.getElementById('captchaOpenBtn');
 const captchaContinueBtn = document.getElementById('captchaContinueBtn');
+const loginGuideModal = document.getElementById('loginGuideModal');
+const loginGuideDesc = document.getElementById('loginGuideDesc');
+const loginGuideOpenBtn = document.getElementById('loginGuideOpenBtn');
 const pluginGuideTitle = document.getElementById('pluginGuideTitle');
 const pluginGuideDesc = document.getElementById('pluginGuideDesc');
 const pluginUpdateNotice = document.getElementById('pluginUpdateNotice');
@@ -75,6 +82,8 @@ const previewActions = document.getElementById('previewActions');
 const downloadHtmlBtn = document.getElementById('downloadHtmlBtn');
 const downloadExcelBtn = document.getElementById('downloadExcelBtn');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
+const top20CategoryFilterWrap = document.getElementById('top20CategoryFilterWrap');
+const top20CategoryFilter = document.getElementById('top20CategoryFilter');
 
 const PDF_FOOTER_TEXT = '本报告数据由ai操盘手提供，如对报告数据有疑问可加微信 maoniuchaoren。';
 let generatingTimer = null;
@@ -88,6 +97,7 @@ const cacheFilterCreator = document.getElementById('cacheFilterCreator');
 const cacheFilterResetBtn = document.getElementById('cacheFilterResetBtn');
 const accountsTableBody = document.getElementById('accountsTableBody');
 const refreshAccountsBtn = document.getElementById('refreshAccountsBtn');
+const createAccountBtn = document.getElementById('createAccountBtn');
 const accountForm = document.getElementById('accountForm');
 const accountFormCard = document.getElementById('accountFormCard');
 const accountFormTitle = document.getElementById('accountFormTitle');
@@ -119,6 +129,63 @@ function parseKeywords(text) {
 function setLine(el, message, type = '') {
   el.textContent = message || '';
   el.className = `status-line ${type}`.trim();
+  el.onclick = null;
+}
+
+function isAlibabaLoginError(message = '') {
+  const text = String(message || '');
+  return /未检测到阿里巴巴登录|未登录.*阿里巴巴|请先登录.*alibaba|请确认已登录/i.test(text);
+}
+
+function showLoginGuideModal(message = '') {
+  if (loginGuideDesc) {
+    loginGuideDesc.textContent =
+      message ||
+      '生成报告需要先登录阿里巴巴国际站，否则插件无法抓取同行数据。';
+  }
+  loginGuideModal?.classList.remove('hidden');
+}
+
+function hideLoginGuideModal() {
+  loginGuideModal?.classList.add('hidden');
+}
+
+function setLoginRequiredStatus(el, message = '') {
+  const text =
+    message ||
+    '未检测到阿里巴巴登录状态，请先登录后再生成报告。';
+  el.innerHTML = `${escapeHtml(text)} <button type="button" class="status-action" data-open-login="true">打开阿里巴巴登录页</button>`;
+  el.className = 'status-line login-required';
+  el.onclick = (event) => {
+    if (event.target?.dataset?.openLogin) {
+      event.preventDefault();
+      openVerificationPage(ALIBABA_LOGIN_URL);
+    }
+  };
+}
+
+function bindLoginGuideModal() {
+  loginGuideOpenBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    openVerificationPage(ALIBABA_LOGIN_URL);
+  });
+  document.querySelectorAll('[data-close-login-modal="true"]').forEach((node) => {
+    node.addEventListener('click', () => hideLoginGuideModal());
+  });
+}
+
+function handleReportGenerationError(el, error) {
+  const message = error?.message || '生成失败';
+  if (isCaptchaPendingError(error)) {
+    setLine(el, '请先完成验证，完成后点击弹窗中的「继续生成」', 'warning');
+    return;
+  }
+  if (isAlibabaLoginError(message)) {
+    setLoginRequiredStatus(el, message);
+    showLoginGuideModal(message);
+    return;
+  }
+  setLine(el, message, 'error');
 }
 
 function showReportGenerating(message, title = '正在生成报告') {
@@ -194,7 +261,7 @@ function buildPdfFilename() {
   if (state.preview.type === 'top20') {
     const keywords = parseKeywords(top20Keywords.value);
     const keyword = sanitizeFilenamePart(keywords[0] || 'report', 40);
-    return `${keyword}-top20同行榜-${dateStamp}.pdf`;
+  return `${keyword}-top同行榜-${dateStamp}.pdf`;
   }
   if (state.preview.type === 'shop-inquiry') {
     const base = sanitizeFilenamePart(state.preview.title || '指定同行询盘分布');
@@ -221,7 +288,7 @@ function setTop20SearchPageCount(value) {
     top20SearchPageCount.value = String(normalized);
   }
   if (top20SearchPageCountHint) {
-    top20SearchPageCountHint.textContent = `每个关键词抓取 ${normalized} 页搜索结果；页数越多数据越全，但耗时更长。`;
+    top20SearchPageCountHint.textContent = SCRAPE_PARAM_HINT;
   }
   return normalized;
 }
@@ -259,7 +326,7 @@ function setShopProductsPerCategory(value) {
     shopProductsPerCategory.value = String(normalized);
   }
   if (shopProductsPerCategoryHint) {
-    shopProductsPerCategoryHint.textContent = `完整模式抓取 Profile 各分类、特色产品与销量页；每个分组最多取 ${normalized} 个产品 ID，大店通常需 30–50 秒。`;
+    shopProductsPerCategoryHint.textContent = SCRAPE_PARAM_HINT;
   }
   return normalized;
 }
@@ -505,12 +572,10 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
     );
     state.pendingCaptchaRetry = null;
   } catch (error) {
-    if (isCaptchaPendingError(error)) {
-      setLine(shopStatus, '请先完成验证，完成后点击弹窗中的「继续生成」', 'warning');
-    } else {
+    if (!isCaptchaPendingError(error)) {
       state.pendingCaptchaRetry = null;
-      setLine(shopStatus, error.message || '生成失败', 'error');
     }
+    handleReportGenerationError(shopStatus, error);
   } finally {
     hideReportGenerating();
     setGeneratingBusy(false);
@@ -526,11 +591,82 @@ function renderShopInquiryActionCell(home) {
   return `<button type="button" class="btn ghost shop-inquiry-btn" data-shop-url="${escapeHtml(normalized.shopUrl)}">查全店询盘</button>`;
 }
 
-function renderTop20Preview(reports) {
+function getTop20CategoryOptions(reports = []) {
+  const categories = [];
+  const seen = new Set();
+  for (const report of reports || []) {
+    for (const category of report.categories || []) {
+      if (!category?.category || seen.has(category.category)) {
+        continue;
+      }
+      seen.add(category.category);
+      categories.push(category.category);
+    }
+  }
+  return categories;
+}
+
+function resolveTop20Category(report, selectedCategory = '') {
+  if (!report?.categories?.length) {
+    return null;
+  }
+  if (selectedCategory) {
+    return (
+      report.categories.find((item) => item.category === selectedCategory) ||
+      null
+    );
+  }
+  return report.categories[0];
+}
+
+function populateTop20CategoryFilter(reports = []) {
+  const categories = getTop20CategoryOptions(reports);
+  if (!top20CategoryFilter || !top20CategoryFilterWrap) {
+    return;
+  }
+  if (!categories.length) {
+    top20CategoryFilterWrap.classList.add('hidden');
+    top20CategoryFilter.innerHTML = '';
+    state.top20SelectedCategory = '';
+    return;
+  }
+  top20CategoryFilterWrap.classList.remove('hidden');
+  top20CategoryFilter.innerHTML = categories
+    .map(
+      (category) =>
+        `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`,
+    )
+    .join('');
+  if (
+    state.top20SelectedCategory &&
+    categories.includes(state.top20SelectedCategory)
+  ) {
+    top20CategoryFilter.value = state.top20SelectedCategory;
+  } else {
+    state.top20SelectedCategory = categories[0];
+    top20CategoryFilter.value = categories[0];
+  }
+}
+
+function refreshTop20Preview() {
+  if (state.preview.type !== 'top20' || !state.preview.reports?.length) {
+    return;
+  }
+  previewContent.innerHTML = renderTop20Preview(
+    state.preview.reports,
+    state.top20SelectedCategory,
+  );
+}
+
+function renderTop20Preview(reports, selectedCategory = state.top20SelectedCategory) {
   return reports
     .map((report) => {
-      const category = report.categories[0];
+      const category = resolveTop20Category(report, selectedCategory);
       if (!category) return '';
+      const totalHint =
+        category.totalCount > 20
+          ? `<p class="report-note">该类目共 ${category.totalCount} 个同行，导出 PDF 时仅保留前 20 名。</p>`
+          : '';
       const rows = category.rows
         .map(
           (row) => `
@@ -555,6 +691,7 @@ function renderTop20Preview(reports) {
         <section class="report-section">
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
           <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。</p>
+          ${totalHint}
           <table class="report-table">
             <thead>
               <tr>
@@ -582,12 +719,13 @@ function renderTop20Preview(reports) {
     .join('');
 }
 
-function buildTop20PdfHtml(reports, reportTitle) {
+function buildTop20PdfHtml(reports, reportTitle, selectedCategory = state.top20SelectedCategory) {
   const sections = reports
     .map((report) => {
-      const category = report.categories[0];
+      const category = resolveTop20Category(report, selectedCategory);
       if (!category) return '';
-      const rows = category.rows
+      const exportRows = category.rows.slice(0, 20);
+      const rows = exportRows
         .map(
           (row) => `
           <tr>
@@ -609,7 +747,7 @@ function buildTop20PdfHtml(reports, reportTitle) {
       return `
         <section class="report-section">
           <h4>${escapeHtml(category.category)} · ${escapeHtml(report.keyword)}</h4>
-          <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。</p>
+          <p class="report-note">访客、询盘为近 6 个月类目数据；订单量为全店近 6 个月数据。PDF 仅导出当前类目前 20 名同行。</p>
           <table>
             <thead>
               <tr>
@@ -644,7 +782,7 @@ function buildPdfExportHtml() {
   const { type, title, reports, html, shopPayload } = state.preview;
   const footer = `<p class="pdf-export-footer">${escapeHtml(PDF_FOOTER_TEXT)}</p>`;
   if (type === 'top20' && reports?.length) {
-    return `<div class="pdf-export-root">${buildTop20PdfHtml(reports, title)}</div>`;
+    return `<div class="pdf-export-root">${buildTop20PdfHtml(reports, title, state.top20SelectedCategory)}</div>`;
   }
   if (type === 'shop-inquiry' && shopPayload) {
     return `<div class="pdf-export-root"><h2>${escapeHtml(title)}</h2>${renderShopPreview(
@@ -1398,6 +1536,7 @@ function showPreview({ type, title, message, html, reports, rawData, shopPayload
   previewContent.classList.remove('hidden');
   previewActions.classList.remove('hidden');
   downloadExcelBtn.classList.toggle('hidden', type !== 'top20');
+  top20CategoryFilterWrap?.classList.toggle('hidden', type !== 'top20');
   if (type === 'shop-inquiry' && shopPayload) {
     previewContent.innerHTML = renderShopPreview(
       shopPayload.categories,
@@ -1406,7 +1545,8 @@ function showPreview({ type, title, message, html, reports, rawData, shopPayload
     );
     bindPreviewTree();
   } else if (type === 'top20' && reports?.length) {
-    previewContent.innerHTML = renderTop20Preview(reports);
+    populateTop20CategoryFilter(reports);
+    previewContent.innerHTML = renderTop20Preview(reports, state.top20SelectedCategory);
   } else if (html) {
     previewContent.innerHTML = html;
   }
@@ -1478,12 +1618,10 @@ async function runTop20Report() {
     setLine(top20Status, timingSummary ? `报告生成成功 · ${timingSummary}` : '报告生成成功', 'success');
     state.pendingCaptchaRetry = null;
   } catch (error) {
-    if (isCaptchaPendingError(error)) {
-      setLine(top20Status, '请先完成验证，完成后点击弹窗中的「继续生成」', 'warning');
-    } else {
+    if (!isCaptchaPendingError(error)) {
       state.pendingCaptchaRetry = null;
-      setLine(top20Status, error.message || '生成失败', 'error');
     }
+    handleReportGenerationError(top20Status, error);
   } finally {
     hideReportGenerating();
     setGeneratingBusy(false);
@@ -1876,14 +2014,15 @@ function isAdminUser() {
 function configureAccountFormAccess({ editing = false } = {}) {
   const isAdmin = isAdminUser();
   accountFormCard.classList.toggle('hidden', !isAdmin && !editing);
+  createAccountBtn?.classList.toggle('hidden', !isAdmin);
   accountFormTitle.textContent = isAdmin && !accountEditId.value ? '新建账号' : '编辑账号';
   accountFormDesc.textContent = isAdmin
     ? '管理员可创建经理 / 员工账号，并指定上级人员'
     : '可修改密码与上级人员，无法修改账号类型或新建账号';
   accountsListDesc.textContent = isAdmin
-    ? '支持增删改查'
+    ? '支持增删改查，列表包含 admin 管理员账号'
     : '仅显示本人及下级账号，点击编辑可修改密码与上级人员';
-  accountUsername.disabled = !isAdmin;
+  accountUsername.disabled = Boolean(accountEditId.value) && !isAdmin;
   accountRole.disabled = !isAdmin;
   resetAccountFormBtn.classList.toggle('hidden', !isAdmin);
 }
@@ -1929,17 +2068,24 @@ async function loadAccounts() {
     const data = await apiFetch('/api/users');
     state.users = data.users || [];
     fillParentOptions(state.users);
-    if (!state.users.length) {
+    const sortedUsers = [...state.users].sort((a, b) => {
+      if (a.username === 'admin') return -1;
+      if (b.username === 'admin') return 1;
+      return a.username.localeCompare(b.username, 'zh-CN');
+    });
+    if (!sortedUsers.length) {
       accountsTableBody.innerHTML = '<tr><td colspan="4" class="empty-cell">暂无可见账号</td></tr>';
       return;
     }
-    accountsTableBody.innerHTML = state.users
+    accountsTableBody.innerHTML = sortedUsers
       .map((user) => {
         const parent = state.users.find((item) => item.id === user.parentId);
         const canDelete = isAdmin && user.username !== 'admin';
+        const adminBadge =
+          user.username === 'admin' ? ' <span class="badge">系统账号</span>' : '';
         return `
           <tr>
-            <td>${escapeHtml(user.username)}</td>
+            <td>${escapeHtml(user.username)}${adminBadge}</td>
             <td>${escapeHtml(user.roleLabel)}</td>
             <td>${escapeHtml(parent?.username || '-')}</td>
             <td>
@@ -2024,6 +2170,15 @@ accountForm.addEventListener('submit', async (event) => {
 
 resetAccountFormBtn.addEventListener('click', resetAccountForm);
 refreshAccountsBtn.addEventListener('click', loadAccounts);
+createAccountBtn?.addEventListener('click', () => {
+  resetAccountForm();
+  accountFormCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  accountUsername?.focus();
+});
+top20CategoryFilter?.addEventListener('change', () => {
+  state.top20SelectedCategory = top20CategoryFilter.value;
+  refreshTop20Preview();
+});
 
 function initAppAfterLogin() {
   const savedId = localStorage.getItem(EXTENSION_ID_KEYS[0]) || '';
@@ -2034,6 +2189,10 @@ function initAppAfterLogin() {
   bindShopProductsPerCategory();
   bindCacheFilters();
   bindCaptchaGuideModal();
+  bindLoginGuideModal();
+  if (isAdminUser()) {
+    configureAccountFormAccess({ editing: false });
+  }
   listenForExtensionIdMessage();
   syncExtensionInfoFromServer().then(() => probeExtension());
   startExtensionInfoSync();

@@ -47,7 +47,7 @@ function styleDataRow(row) {
 
 function writeCategorySheet(sheet, keyword, category) {
   sheet.mergeCells('A1:L1');
-  sheet.getCell('A1').value = `${category.category} 类目询盘同行 top20 排行榜`;
+  sheet.getCell('A1').value = `${category.category} 类目询盘同行 top 排行榜`;
   sheet.getCell('A1').font = { size: 14, bold: true };
 
   sheet.mergeCells('A2:L2');

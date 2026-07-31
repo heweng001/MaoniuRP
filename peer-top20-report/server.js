@@ -223,12 +223,12 @@ app.post('/api/reports/top20', async (req, res) => {
       reports: report.reports,
       html: report.html,
       timings,
-      message: `已生成 Top20 同行报告（${keywordList.length} 个关键词，抓取 ${searchPageCount} 页）`,
+      message: `已生成 Top 同行报告（${keywordList.length} 个关键词，抓取 ${searchPageCount} 页）`,
     });
   } catch (error) {
     const failedKeywords = parseKeywordsInput(req.body?.keywordText);
     await saveReportCache({
-      title: req.body?.title || 'Top20同行报告',
+      title: req.body?.title || 'Top同行报告',
       type: REPORT_TYPES.TOP20,
       createdBy: req.user.username,
       targetObject: failedKeywords.join(', '),

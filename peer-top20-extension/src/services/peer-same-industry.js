@@ -264,8 +264,41 @@ function toIndustryData(item, categoryInfo = null) {
   return industryData;
 }
 
-function resetState() {
-  keywordSearchResult = [];
+function getRecordInquiry(record) {
+  return convertStringInquiryToInt({ compareCompanyView: { iquiries: record?.iquiries } }) || 0;
+}
+
+function sortRecordsByInquiry(records) {
+  return [...records].sort((a, b) => getRecordInquiry(b) - getRecordInquiry(a));
+}
+
+function resolveCategoryKey(record) {
+  const platformCategory = String(record.platformCategory || '').trim();
+  if (platformCategory && platformCategory !== '-') {
+    return platformCategory;
+  }
+  const categoryName = String(record.categoryName || '').trim();
+  return categoryName || '未分类';
+}
+
+function buildCategoryGroups(records) {
+  const groups = new Map();
+  for (const record of records) {
+    const key = resolveCategoryKey(record);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(record);
+  }
+
+  return [...groups.entries()]
+    .map(([category, value]) => ({
+      key: category,
+      category,
+      value: sortRecordsByInquiry(value),
+    }))
+    .sort((a, b) => getRecordInquiry(a.value[0]) - getRecordInquiry(b.value[0]))
+    .reverse();
 }
 
 function mergeCompareResults(supplierMap, compareProductData) {
@@ -317,15 +350,15 @@ async function fetchAllCompareItems(productIds, timings, onProgress) {
   return Array.from(supplierMap.values());
 }
 
-async function resolveTop20ProductCategories(topItems, onProgress) {
-  const categories = new Array(topItems.length).fill(null);
+async function resolveProductCategories(items, onProgress) {
+  const categories = new Array(items.length).fill(null);
   let completed = 0;
 
   await mapWithConcurrency(
-    topItems.map((_, index) => index),
+    items.map((_, index) => index),
     TOP20_DETAIL_CONCURRENCY,
     async (index) => {
-      const compareProductView = topItems[index].compareProductView || {};
+      const compareProductView = items[index].compareProductView || {};
       const productDetailUrl = buildProductDetailUrl(
         compareProductView.productId,
         compareProductView.productDetailUrl || compareProductView.detailUrl,
@@ -351,8 +384,8 @@ async function resolveTop20ProductCategories(topItems, onProgress) {
       } finally {
         completed += 1;
         onProgress(
-          88 + Math.round((completed / topItems.length) * 8),
-          `正在解析产品类目（${completed}/${topItems.length}）…`,
+          86 + Math.round((completed / items.length) * 10),
+          `正在解析产品类目（${completed}/${items.length}）…`,
         );
       }
     },
@@ -397,25 +430,19 @@ export async function fetchPeerTop20({ keyword, searchPageCount = DEFAULT_SEARCH
   const totalResult = await fetchAllCompareItems(productIds, timings, onProgress);
 
   totalResult.sort(sortByInquiry);
-  const topSlice = totalResult.slice(0, TOP_COUNT);
 
-  onProgress(86, '正在解析 Top20 产品类目…');
+  onProgress(86, `正在解析 ${totalResult.length} 个 compare 产品类目…`);
   const detailStartedAt = Date.now();
-  const categoryResults = await resolveTop20ProductCategories(topSlice, onProgress);
+  const categoryResults = await resolveProductCategories(totalResult, onProgress);
   timings.detailMs = Date.now() - detailStartedAt;
-  timings.detailCandidates = topSlice.length;
+  timings.detailCandidates = totalResult.length;
   timings.detailSuccess = categoryResults.filter(Boolean).length;
 
-  onProgress(92, '正在整理 Top20 数据…');
+  onProgress(96, '正在整理同行数据…');
   const rankStartedAt = Date.now();
-  const effectData = topSlice.map((item, index) => toIndustryData(item, categoryResults[index]));
-  const effectDataCategoryGrouped = [
-    {
-      key: '全部',
-      category: '全部',
-      value: effectData,
-    },
-  ];
+  const allEffectData = totalResult.map((item, index) => toIndustryData(item, categoryResults[index]));
+  const effectDataCategoryGrouped = buildCategoryGroups(allEffectData);
+  const effectData = sortRecordsByInquiry(allEffectData).slice(0, TOP_COUNT);
   timings.rankMs = Date.now() - rankStartedAt;
   timings.totalMs = Date.now() - totalStartedAt;
 

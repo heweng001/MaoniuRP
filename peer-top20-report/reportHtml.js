@@ -80,7 +80,7 @@ export function generateHtmlReport(reports, { title, selectedCategory } = {}) {
 
       return `
         <section class="report-section">
-          <h2>${category.category} 类目询盘同行 top20 排行榜</h2>
+          <h2>${category.category} 类目询盘同行 top 排行榜</h2>
           <p class="note">
             关键词：<strong>${report.keyword}</strong>；
             访客、询盘为该店铺在 <strong>${category.category}</strong> 类目下近 6 个月数据。
@@ -91,7 +91,7 @@ export function generateHtmlReport(reports, { title, selectedCategory } = {}) {
     })
     .join('');
 
-  const reportTitle = title || `同行 Top20 报告 - ${today}`;
+  const reportTitle = title || `Top 同行报告 - ${today}`;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">

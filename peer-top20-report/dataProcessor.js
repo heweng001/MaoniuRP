@@ -140,15 +140,8 @@ export function buildSummary(records) {
   };
 }
 
-export function buildCategoryGroup(category, records, { inquiryThreshold = 0 } = {}) {
-  const filtered =
-    inquiryThreshold > 0
-      ? records.filter((record) => {
-          const inquiries = parseToNumber(record.iquiries);
-          return !Number.isNaN(inquiries) && inquiries > inquiryThreshold;
-        })
-      : records;
-  const sorted = [...filtered].sort((a, b) => {
+export function buildCategoryGroup(category, records) {
+  const sorted = [...records].sort((a, b) => {
     const left = parseToNumber(a.iquiries);
     const right = parseToNumber(b.iquiries);
     if (Number.isNaN(left) && Number.isNaN(right)) return 0;
@@ -156,25 +149,12 @@ export function buildCategoryGroup(category, records, { inquiryThreshold = 0 } =
     if (Number.isNaN(right)) return -1;
     return right - left;
   });
-  const top20 = sorted.slice(0, 20);
   return {
     category,
     rows: sorted.map((record, index) => buildPeerRow(record, index + 1)),
-    summary: buildSummary(top20),
+    summary: buildSummary(sorted),
     totalCount: sorted.length,
   };
-}
-
-function resolveInquiryThreshold(data, item) {
-  const fromItem =
-    item?.scrapingStats?.inquiryThreshold ??
-    item?.timings?.inquiryThreshold ??
-    item?.inquiryThreshold;
-  const fromRoot =
-    data?.inquiryThreshold ?? data?.timings?.inquiryThreshold ?? data?.scrapingStats?.inquiryThreshold;
-  const value = fromItem ?? fromRoot ?? 0;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 export function processSameIndustryData(data) {
@@ -185,7 +165,6 @@ export function processSameIndustryData(data) {
 
   return source.map((item) => {
     const keyword = String(item.keyword || '');
-    const inquiryThreshold = resolveInquiryThreshold(data, item);
     const grouped = item.effectDataCategoryGrouped || [];
     let categories = [];
     let defaultCategory = '未分类';
@@ -193,18 +172,16 @@ export function processSameIndustryData(data) {
     if (grouped.length) {
       categories = grouped
         .map((group) =>
-          buildCategoryGroup(String(group.category || '未分类'), group.value || [], {
-            inquiryThreshold,
-          }),
+          buildCategoryGroup(String(group.category || '未分类'), group.value || []),
         )
         .filter((category) => category.rows.length > 0);
       defaultCategory = categories[0]?.category || '未分类';
     } else {
       const effectData = item.effectData || [];
       defaultCategory = String(effectData[0]?.category || '默认类目');
-      categories = [
-        buildCategoryGroup(defaultCategory, effectData, { inquiryThreshold }),
-      ].filter((category) => category.rows.length > 0);
+      categories = [buildCategoryGroup(defaultCategory, effectData)].filter(
+        (category) => category.rows.length > 0,
+      );
     }
 
     return { keyword, categories, defaultCategory };

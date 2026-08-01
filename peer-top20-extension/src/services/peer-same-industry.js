@@ -22,13 +22,11 @@ import {
 const DEFAULT_SEARCH_PAGE_COUNT = 5;
 const COMPARE_BATCH_SIZE = 20;
 const COMPARE_CONCURRENCY = 2;
-/** 类目解析：仅对询盘高于此阈值的产品抓取详情页 */
-export const INQUIRY_PARSE_THRESHOLD = 40;
-/** 报告展示：compare 结果中询盘高于此阈值的店铺/product 进入报告 */
-export const INQUIRY_REPORT_THRESHOLD = 40;
+/** compare 结果中询盘高于此阈值的店铺进入报告，并抓取详情页解析类目 */
+export const INQUIRY_THRESHOLD = 40;
 const TOP20_DETAIL_CONCURRENCY = 10;
 const TOP20_DETAIL_DELAY_MS = 150;
-const DETAIL_PARSE_MAX_RETRIES = 2;
+const DETAIL_PARSE_MAX_RETRIES = 1;
 const DETAIL_RETRY_DELAY_MS = 600;
 const TOP20_DETAIL_VERIFY_URL = 'https://www.alibaba.com/detail/compareProducts.html';
 
@@ -645,12 +643,12 @@ export async function fetchPeerTop20({
     onProgress,
     scrapeContext,
   );
-  const reportCandidates = filterInquiryAbove(allCompareResults, INQUIRY_REPORT_THRESHOLD);
-  const parseCandidates = filterInquiryAbove(allCompareResults, INQUIRY_PARSE_THRESHOLD);
+  const reportCandidates = filterInquiryAbove(allCompareResults, INQUIRY_THRESHOLD);
+  const parseCandidates = reportCandidates;
 
   onProgress(
     86,
-    `已筛选询盘>${INQUIRY_PARSE_THRESHOLD}的 ${parseCandidates.length} 个产品解析类目，报告纳入询盘>${INQUIRY_REPORT_THRESHOLD}的 ${reportCandidates.length} 个…`,
+    `已筛选询盘>${INQUIRY_THRESHOLD}的 ${parseCandidates.length} 个产品，正在解析类目…`,
   );
   const detailStartedAt = Date.now();
   const categoryOutcome = await resolveProductCategories(
@@ -663,8 +661,7 @@ export async function fetchPeerTop20({
   timings.detailSuccess = categoryOutcome.detailSuccess;
   timings.detailFailed = categoryOutcome.detailFailed;
   timings.detailRetryRounds = categoryOutcome.detailRetryRounds;
-  timings.inquiryThreshold = INQUIRY_REPORT_THRESHOLD;
-  timings.inquiryParseThreshold = INQUIRY_PARSE_THRESHOLD;
+  timings.inquiryThreshold = INQUIRY_THRESHOLD;
   timings.highInquiryProductCount = reportCandidates.length;
 
   onProgress(96, '正在整理同行数据…');
@@ -693,8 +690,7 @@ export async function fetchPeerTop20({
     detailSuccess: categoryOutcome.detailSuccess,
     detailFailed: categoryOutcome.detailFailed,
     detailRetryRounds: categoryOutcome.detailRetryRounds,
-    inquiryThreshold: INQUIRY_REPORT_THRESHOLD,
-    inquiryParseThreshold: INQUIRY_PARSE_THRESHOLD,
+    inquiryThreshold: INQUIRY_THRESHOLD,
     highInquiryProductCount: reportCandidates.length,
     failureStats,
     diagnostics: hasScrapeDiagnostics(diagnostics) ? diagnostics : null,
@@ -708,7 +704,7 @@ export async function fetchPeerTop20({
 
   onProgress(100, '抓取完成');
   console.log(
-    `[Peer Top20] ${displayKeyword}: ${pageCount}页×${keywordList.length}词，去重后产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），报告询盘>${INQUIRY_REPORT_THRESHOLD} ${reportCandidates.length} 个，类目解析 ${categoryOutcome.detailSuccess}/${parseCandidates.length}，报告 ${effectData.length} 家公司，完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
+    `[Peer Top20] ${displayKeyword}: ${pageCount}页×${keywordList.length}词，去重后产品 ${timings.uniqueProducts} 个，compare ${timings.compareBatches} 批/${allCompareResults.length} 条（失败 ${timings.compareBatchFailures} 批），报告询盘>${INQUIRY_THRESHOLD} ${reportCandidates.length} 个，类目解析 ${categoryOutcome.detailSuccess}/${parseCandidates.length}，报告 ${effectData.length} 家公司，完整 ${scrapingStats.isComplete}，耗时 ${timings.totalMs}ms`,
     timings,
     scrapingStats,
   );

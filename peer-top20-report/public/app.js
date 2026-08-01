@@ -7,6 +7,8 @@ const REPORT_DATA_NOTE =
   '报告中的访客，询盘，订单量，订单额均为最近6个月的汇总数据，订单额单位为usd';
 const ALIBABA_LOGIN_URL = 'https://i.alibaba.com';
 const EXTENSION_ID_KEYS = ['peer-top20-extension-id', 'ai-plugin-id'];
+const TOP20_SEARCH_PAGE_COUNT_KEY = 'top20-search-page-count';
+const SHOP_PRODUCTS_PER_CATEGORY_KEY = 'shop-products-per-category';
 const EXTENSION_INFO_SYNC_MS = 15000;
 
 const state = {
@@ -302,15 +304,35 @@ function buildPdfFilename() {
   return `${base}-${dateStamp}.pdf`;
 }
 
-function getTop20SearchPageCount() {
-  const parsed = Number.parseInt(top20SearchPageCount?.value, 10);
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_TOP20_SEARCH_PAGE_COUNT;
+function resolveTop20SearchPageCount() {
+  const fromInput = Number.parseInt(top20SearchPageCount?.value, 10);
+  if (Number.isFinite(fromInput)) {
+    return Math.min(20, Math.max(1, fromInput));
   }
-  return Math.min(20, Math.max(1, parsed));
+  const stored = Number.parseInt(localStorage.getItem(TOP20_SEARCH_PAGE_COUNT_KEY), 10);
+  if (Number.isFinite(stored)) {
+    return Math.min(20, Math.max(1, stored));
+  }
+  return DEFAULT_TOP20_SEARCH_PAGE_COUNT;
 }
 
-function setTop20SearchPageCount(value) {
+function resolveShopProductsPerCategory() {
+  const fromInput = Number.parseInt(shopProductsPerCategory?.value, 10);
+  if (Number.isFinite(fromInput)) {
+    return Math.min(20, Math.max(1, fromInput));
+  }
+  const stored = Number.parseInt(localStorage.getItem(SHOP_PRODUCTS_PER_CATEGORY_KEY), 10);
+  if (Number.isFinite(stored)) {
+    return Math.min(20, Math.max(1, stored));
+  }
+  return DEFAULT_SHOP_PRODUCTS_PER_CATEGORY;
+}
+
+function getTop20SearchPageCount() {
+  return resolveTop20SearchPageCount();
+}
+
+function setTop20SearchPageCount(value, { persist = true } = {}) {
   const normalized = Math.min(
     20,
     Math.max(1, Number.parseInt(value, 10) || DEFAULT_TOP20_SEARCH_PAGE_COUNT),
@@ -321,22 +343,38 @@ function setTop20SearchPageCount(value) {
   if (top20SearchPageCountHint) {
     top20SearchPageCountHint.textContent = SCRAPE_PARAM_HINT;
   }
+  if (persist) {
+    localStorage.setItem(TOP20_SEARCH_PAGE_COUNT_KEY, String(normalized));
+  }
   return normalized;
 }
 
 function resetReportInputDefaults() {
-  setTop20SearchPageCount(DEFAULT_TOP20_SEARCH_PAGE_COUNT);
-  setShopProductsPerCategory(DEFAULT_SHOP_PRODUCTS_PER_CATEGORY);
+  // 保留用户设置的抓取参数，不在每次生成后重置为默认值
 }
 
 function bindTop20SearchPageCount() {
   if (!top20SearchPageCount) {
     return;
   }
-  setTop20SearchPageCount(DEFAULT_TOP20_SEARCH_PAGE_COUNT);
-  top20SearchPageCount.addEventListener('change', () => {
-    setTop20SearchPageCount(top20SearchPageCount.value);
-  });
+  if (top20SearchPageCount.dataset.bound !== 'true') {
+    top20SearchPageCount.dataset.bound = 'true';
+    top20SearchPageCount.addEventListener('change', () => {
+      setTop20SearchPageCount(top20SearchPageCount.value);
+    });
+    top20SearchPageCount.addEventListener('input', () => {
+      const parsed = Number.parseInt(top20SearchPageCount.value, 10);
+      if (Number.isFinite(parsed)) {
+        localStorage.setItem(
+          TOP20_SEARCH_PAGE_COUNT_KEY,
+          String(Math.min(20, Math.max(1, parsed))),
+        );
+      }
+    });
+  }
+  setTop20SearchPageCount(
+    localStorage.getItem(TOP20_SEARCH_PAGE_COUNT_KEY) ?? DEFAULT_TOP20_SEARCH_PAGE_COUNT,
+  );
 }
 
 function getTop20GeneratingMessage(searchPageCount = getTop20SearchPageCount()) {
@@ -344,20 +382,19 @@ function getTop20GeneratingMessage(searchPageCount = getTop20SearchPageCount()) 
 }
 
 function getShopProductsPerCategory() {
-  const parsed = Number.parseInt(shopProductsPerCategory?.value, 10);
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_SHOP_PRODUCTS_PER_CATEGORY;
-  }
-  return Math.min(20, Math.max(1, parsed));
+  return resolveShopProductsPerCategory();
 }
 
-function setShopProductsPerCategory(value) {
+function setShopProductsPerCategory(value, { persist = true } = {}) {
   const normalized = Math.min(20, Math.max(1, Number.parseInt(value, 10) || DEFAULT_SHOP_PRODUCTS_PER_CATEGORY));
   if (shopProductsPerCategory) {
     shopProductsPerCategory.value = String(normalized);
   }
   if (shopProductsPerCategoryHint) {
     shopProductsPerCategoryHint.textContent = SCRAPE_PARAM_HINT;
+  }
+  if (persist) {
+    localStorage.setItem(SHOP_PRODUCTS_PER_CATEGORY_KEY, String(normalized));
   }
   return normalized;
 }
@@ -366,10 +403,24 @@ function bindShopProductsPerCategory() {
   if (!shopProductsPerCategory) {
     return;
   }
-  setShopProductsPerCategory(DEFAULT_SHOP_PRODUCTS_PER_CATEGORY);
-  shopProductsPerCategory.addEventListener('change', () => {
-    setShopProductsPerCategory(shopProductsPerCategory.value);
-  });
+  if (shopProductsPerCategory.dataset.bound !== 'true') {
+    shopProductsPerCategory.dataset.bound = 'true';
+    shopProductsPerCategory.addEventListener('change', () => {
+      setShopProductsPerCategory(shopProductsPerCategory.value);
+    });
+    shopProductsPerCategory.addEventListener('input', () => {
+      const parsed = Number.parseInt(shopProductsPerCategory.value, 10);
+      if (Number.isFinite(parsed)) {
+        localStorage.setItem(
+          SHOP_PRODUCTS_PER_CATEGORY_KEY,
+          String(Math.min(20, Math.max(1, parsed))),
+        );
+      }
+    });
+  }
+  setShopProductsPerCategory(
+    localStorage.getItem(SHOP_PRODUCTS_PER_CATEGORY_KEY) ?? DEFAULT_SHOP_PRODUCTS_PER_CATEGORY,
+  );
 }
 
 function getShopGeneratingMessage(productsPerCategory = getShopProductsPerCategory()) {
@@ -554,15 +605,15 @@ async function runShopInquiryReport(inputUrl, { updateInput = false } = {}) {
 
   generateShopBtn.disabled = true;
   setGeneratingBusy(true);
+  const productsPerCategory = setShopProductsPerCategory(shopProductsPerCategory?.value);
   if (normalized.wasCorrected) {
-    showReportGenerating(`${normalized.correctionHint}；${getShopGeneratingMessage()}`);
-    setLine(shopStatus, `${normalized.correctionHint}；正在查询（每分组 ${getShopProductsPerCategory()} 个产品 ID）...`);
+    showReportGenerating(`${normalized.correctionHint}；${getShopGeneratingMessage(productsPerCategory)}`);
+    setLine(shopStatus, `${normalized.correctionHint}；正在查询（每分组 ${productsPerCategory} 个产品 ID）...`);
   } else {
-    showReportGenerating(getShopGeneratingMessage());
-    setLine(shopStatus, `插件正在查询店铺类目询盘（参数${getShopProductsPerCategory()}）...`);
+    showReportGenerating(getShopGeneratingMessage(productsPerCategory));
+    setLine(shopStatus, `插件正在查询店铺类目询盘（参数${productsPerCategory}）...`);
   }
 
-  const productsPerCategory = getShopProductsPerCategory();
   const startedAt = Date.now();
   const pluginStartedAt = Date.now();
   try {
@@ -1100,6 +1151,28 @@ function getExtensionId() {
   return state.extensionId || localStorage.getItem(EXTENSION_ID_KEYS[0]) || '';
 }
 
+function isChromiumBrowser() {
+  if (typeof window.chrome === 'undefined') {
+    return false;
+  }
+  const ua = navigator.userAgent;
+  return /Chrome|Chromium|Edg|OPR|Brave/i.test(ua) && !/Firefox/i.test(ua);
+}
+
+function canUseExtensionMessaging() {
+  return typeof window.chrome?.runtime?.sendMessage === 'function';
+}
+
+function setPluginNotInstalledStatus() {
+  setPluginStatus('warn', '未安装插件');
+  pluginStatusBtn.title = '点击查看 Chrome 插件安装说明';
+}
+
+function setPluginUnsupportedBrowserStatus() {
+  setPluginStatus('error', '浏览器不支持插件');
+  pluginStatusBtn.title = '请使用 Chrome 或 Edge 浏览器';
+}
+
 function saveExtensionId(value) {
   const trimmed = String(value || '').trim();
   if (!trimmed) return false;
@@ -1140,8 +1213,14 @@ function sendExtensionMessage(message, timeoutMs = 150000, allowFailure = false)
       reject(new Error('未检测到插件，请先安装插件并刷新页面'));
       return;
     }
-    if (!window.chrome?.runtime?.sendMessage) {
-      reject(new Error('当前浏览器不支持 Chrome 插件通信'));
+    if (!canUseExtensionMessaging()) {
+      reject(
+        new Error(
+          isChromiumBrowser()
+            ? '未检测到插件，请先安装插件并刷新页面'
+            : '当前浏览器不支持 Chrome 插件通信',
+        ),
+      );
       return;
     }
 
@@ -1175,11 +1254,6 @@ function sendExtensionMessage(message, timeoutMs = 150000, allowFailure = false)
 
 async function probeExtension(options = {}) {
   const { allowRediscover = true } = options;
-  if (!window.chrome?.runtime?.sendMessage) {
-    setPluginStatus('error', '浏览器不支持插件');
-    state.pluginOk = false;
-    return false;
-  }
 
   let extensionId = getExtensionId();
   if (!extensionId) {
@@ -1188,7 +1262,21 @@ async function probeExtension(options = {}) {
   }
 
   if (!extensionId) {
-    setPluginStatus('warn', '未检测到插件');
+    if (isChromiumBrowser()) {
+      setPluginNotInstalledStatus();
+    } else {
+      setPluginUnsupportedBrowserStatus();
+    }
+    state.pluginOk = false;
+    return false;
+  }
+
+  if (!canUseExtensionMessaging()) {
+    if (isChromiumBrowser()) {
+      setPluginNotInstalledStatus();
+    } else {
+      setPluginUnsupportedBrowserStatus();
+    }
     state.pluginOk = false;
     return false;
   }
@@ -1510,7 +1598,7 @@ recheckExtensionBtn.addEventListener('click', async () => {
     setLine(shopStatus, `插件已更新至 v${state.pluginVersion}`, 'success');
   } else {
     pluginUpdateNoticeText.textContent = state.pluginOk
-      ? `当前仍为 v${state.pluginVersion}，最新为 v${state.latestExtensionInfo?.version}。请确认已移除旧插件并加载新文件夹后重试。`
+      ? `当前仍为 v${state.pluginVersion}，最新为 v${state.latestExtensionInfo?.version}。请确认已移除旧插件并将新 zip 拖入 chrome://extensions 后重试。`
       : '仍未检测到插件，请确认已安装插件并刷新本页后重试。';
   }
   await loadExtensionInfo();
@@ -1723,7 +1811,7 @@ async function runTop20Report() {
 
   generateTop20Btn.disabled = true;
   setGeneratingBusy(true);
-  const searchPageCount = getTop20SearchPageCount();
+  const searchPageCount = setTop20SearchPageCount(top20SearchPageCount?.value);
   showReportGenerating(getTop20GeneratingMessage(searchPageCount), '正在抓取数据');
   setLine(top20Status, `插件正在抓取数据（参数${searchPageCount}）...`);
   const startedAt = Date.now();

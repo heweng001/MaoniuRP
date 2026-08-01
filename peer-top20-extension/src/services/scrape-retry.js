@@ -1,6 +1,6 @@
 /** Compare / 类目解析等抓取步骤的通用重试 */
 
-export const SCRAPE_MAX_RETRIES = 2;
+export const SCRAPE_MAX_RETRIES = 1;
 export const SCRAPE_RETRY_DELAY_MS = 600;
 
 export function sleep(ms) {

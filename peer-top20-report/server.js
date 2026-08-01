@@ -17,7 +17,7 @@ import {
   canViewReportByCreator,
   getUserDirectory,
 } from './authService.js';
-import { getReportCache, listPerformanceReports, listReportCache, saveReportCache, REPORT_TYPES, findBestShopInquiryCache, shouldReuseShopInquiryCache } from './cacheService.js';
+import { getReportCache, listPerformanceReports, listReportCache, saveReportCache, REPORT_TYPES } from './cacheService.js';
 import { getExtensionInfo, streamExtensionZip, watchExtensionBuild } from './extensionService.js';
 import { normalizeAlibabaShopUrl } from './shopUrl.js';
 import { parseKeywordsInput } from './mockData.js';
@@ -314,16 +314,7 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
       Math.max(1, Number.parseInt(req.body?.productsPerCategory, 10) || 2),
     );
     const totalMs = Number(req.body?.durationMs) || Date.now() - startedAt;
-    const bestCached = await findBestShopInquiryCache(normalizedShopUrl);
-    let finalCategories = categories;
-    let reusedFromCache = false;
-    let reuseNote = '';
-
-    if (shouldReuseShopInquiryCache(categories, scrapeStats, bestCached)) {
-      finalCategories = bestCached.categories;
-      reusedFromCache = true;
-      reuseNote = `本次未解析到类目，已采用 ${bestCached.createdBy} 于 ${bestCached.createdAt} 的完整数据（${bestCached.categoryCount} 个类目）`;
-    }
+    const finalCategories = categories;
 
     const reportStatus = finalCategories.length ? (isComplete ? 'success' : 'incomplete') : 'failed';
     const incompleteNote =
@@ -370,17 +361,14 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
         productsPerCategory,
         scrapeStats,
         timings,
-        isComplete: reusedFromCache ? true : isComplete,
-        reusedFromCache,
-        reusedFromCacheId: reusedFromCache ? bestCached.id : null,
+        isComplete,
       },
     });
 
     const shopHeadline = `已生成指定同行询盘分布（参数${productsPerCategory}，总耗时${formatDuration(totalMs)}）`;
-    const baseMessage = normalized.wasCorrected
+    const statusMessage = normalized.wasCorrected
       ? `${normalized.correctionHint}；${shopHeadline}`
       : shopHeadline;
-    const statusMessage = reuseNote ? `${reuseNote}；${baseMessage}` : baseMessage;
 
     res.json({
       success: true,
@@ -390,12 +378,11 @@ app.post('/api/reports/shop-inquiry', async (req, res) => {
       categories: finalCategories,
       html,
       status: reportStatus,
-      isComplete: reusedFromCache ? true : isComplete,
+      isComplete,
       timings,
       wasCorrected: normalized.wasCorrected,
       correctionHint: normalized.correctionHint,
-      reusedFromCache,
-      message: reuseNote ? `${reuseNote}；${statusMessage}` : statusMessage,
+      message: statusMessage,
     });
   } catch (error) {
     await saveReportCache({
